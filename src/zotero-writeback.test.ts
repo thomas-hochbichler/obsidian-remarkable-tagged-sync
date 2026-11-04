@@ -11,6 +11,7 @@ const SOURCE = { index: 1, widthPt: 612, heightPt: 792 };
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
 	return {
 		id: "hl-9f21c4",
+		key: "page-1:1",
 		sentence: "Die Techniken gelten für alle Modelle.",
 		rects: [{ x: 72, y: 700, width: 228, height: 12 }],
 		tool: "marker",

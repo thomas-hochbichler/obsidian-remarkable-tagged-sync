@@ -23,6 +23,7 @@ import { type OcrBackend as OcrBackendId, parentFolder } from "./note-builder";
 import type { BackendSettings } from "./ocr-registry";
 import { DEFAULT_SSH_SETTINGS, type SshSettings } from "./ssh-transport";
 import type { StoredHashes } from "./ssh-hash-cache";
+import { DEFAULT_READWISE_SETTINGS, type ReadwiseSettings, type StoredReadwiseBooks } from "./readwise-state";
 import type { StoredZoteroLinks } from "./zotero-links";
 import { DEFAULT_ZOTERO_SETTINGS, type ZoteroSettings } from "./zotero-settings";
 import { EMPTY_SYNC_INDEX, type SyncIndex, type SyncIndexRow } from "./sync-engine";
@@ -108,6 +109,25 @@ export interface TaggedSyncData {
 	 * one vault is one activation, wherever it is opened.
 	 */
 	licence: LicenceState;
+	/** The Readwise section's rows (Readwise spec §2). */
+	readwise: ReadwiseSettings;
+	/**
+	 * What Readwise should hold from us and what it does, by reMarkable document uuid (Readwise spec
+	 * §3). Opaque here, like `zoteroLinks`; only `readwise-state.ts` reads inside it.
+	 */
+	readwiseBooks: StoredReadwiseBooks;
+	/** 12 hex of SHA-256 of the token the books belong to (Readwise spec §11 P4). */
+	readwiseAccount?: string;
+	/** The fingerprint it replaced on the last account switch, which is how two computers on two accounts are told from a switch (§11 P4). */
+	readwiseAccountBefore?: string;
+	/** Two computers on two accounts were detected; the push stays stopped (§11 P4). */
+	readwiseAccountClash?: true;
+	/** The backfill for the current recording has been started (Readwise spec §5). */
+	readwiseRecording?: true;
+	/** What *Your notes on PDFs* said at the last sync; absent until one recorded it (`settleMarginNotesChoice`). */
+	marginNotesSynced?: boolean;
+	/** What the two *Into Zotero* switches said at the last sync; absent until one recorded it (`settleZoteroSwitches`). */
+	zoteroSwitchesSynced?: { writeText: boolean; addRender: boolean };
 }
 
 /** Read field by field, never handed out whole -- see the `syncIndex` note in `migrateSettings`. */
@@ -132,6 +152,8 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	marginNotes: false,
 	frontmatter: false,
 	licence: NO_LICENCE,
+	readwise: DEFAULT_READWISE_SETTINGS,
+	readwiseBooks: {},
 };
 
 /**
@@ -245,5 +267,15 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// Spread over the default so a `data.json` written by an older version, or one a user has
 		// edited by hand, is missing fields rather than being rejected.
 		licence: { ...NO_LICENCE, ...stored?.licence },
+		readwise: { ...DEFAULT_READWISE_SETTINGS, ...stored?.readwise },
+		// Carried whole, like `zoteroLinks`: a book this build cannot read belongs to the install that
+		// wrote it. Only a map, though -- recording spreads it, and a string would spread into characters.
+		readwiseBooks: typeof stored?.readwiseBooks === "object" && stored.readwiseBooks !== null && !Array.isArray(stored.readwiseBooks) ? stored.readwiseBooks : {},
+		...(typeof stored?.readwiseAccount === "string" && stored.readwiseAccount !== "" ? { readwiseAccount: stored.readwiseAccount } : {}),
+		...(typeof stored?.readwiseAccountBefore === "string" && stored.readwiseAccountBefore !== "" ? { readwiseAccountBefore: stored.readwiseAccountBefore } : {}),
+		...(stored?.readwiseAccountClash === true ? { readwiseAccountClash: true as const } : {}),
+		...(stored?.readwiseRecording === true ? { readwiseRecording: true as const } : {}),
+		...(typeof stored?.marginNotesSynced === "boolean" ? { marginNotesSynced: stored.marginNotesSynced } : {}),
+		...(typeof stored?.zoteroSwitchesSynced?.writeText === "boolean" && typeof stored.zoteroSwitchesSynced.addRender === "boolean" ? { zoteroSwitchesSynced: stored.zoteroSwitchesSynced } : {}),
 	};
 }

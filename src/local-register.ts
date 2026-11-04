@@ -28,7 +28,7 @@ import {
 	pathsForGeneration,
 	resolveLocalModel,
 } from "./local-model-runtime";
-import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir } from "./local-model-settings";
+import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir, timingsFor } from "./local-model-settings";
 import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
 import { type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, offeredGeneration, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
@@ -50,8 +50,25 @@ const PLUGIN_ID = "remarkable-tagged-sync";
 /** What the note-contract hint says while this backend is selected (§7.6). */
 export const LOCAL_NOTE_CONTRACT = "Transcripts keep headings and lists as written on the page; tables come out as plain lines.";
 
+/** One model and where its files are. */
+type ModelOnDisk = NonNullable<ReturnType<typeof resolveLocalModel>>;
+
 /** The download in flight for this Obsidian session, if any. Never persisted; §5.5 forbids it. */
 let download: DownloadHandle | null = null;
+/**
+ * What that download fetches and where it writes. Not always the model in use: taking the offer of a
+ * newer one fetches it beside the working one, and the choice rule keeps naming the working one until
+ * the new one is complete.
+ */
+let downloadTarget: ModelOnDisk | null = null;
+/** What the card is about while it shows this instance's download rather than what is on disk; null otherwise. */
+function downloadOnCard(): ModelOnDisk | null {
+	const progress = download?.progress();
+	if (!progress || progress.phase === "done") return null;
+	if (progress.phase === "failed" && (progress.failure.kind === "cancelled" || progress.failure.kind === "busy")) return null;
+	return downloadTarget;
+}
+
 /** A runtime that failed to start this session (§5.5: session-scoped, not a property of the directory). */
 let runtimeFailure: string | null = null;
 
@@ -114,7 +131,13 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 		switch (inFlight.phase) {
 			case "checking":
 			case "downloading":
-				return { kind: "downloading", receivedBytes: inFlight.phase === "downloading" ? inFlight.receivedBytes : 0, totalBytes: inFlight.phase === "downloading" ? inFlight.totalBytes : 1 };
+				return {
+					kind: "downloading",
+					receivedBytes: inFlight.phase === "downloading" ? inFlight.receivedBytes : 0,
+					totalBytes: inFlight.phase === "downloading" ? inFlight.totalBytes : 1,
+					// The rule answers with another model only when that one is complete, so it is what transcribes.
+					...(downloadTarget && downloadTarget.generation !== generation ? { modelInUse: generation.label } : {}),
+				};
 			case "verifying":
 			case "extracting":
 				return { kind: "verifying" };
@@ -209,6 +232,7 @@ function beginDownload(paths: LocalModelPaths, rerender: () => void, generation:
 		return;
 	}
 	runtimeFailure = null;
+	downloadTarget = { paths, generation };
 	download = startLocalModelDownload(paths, platform, rerender, generation);
 	void download.finished.then(() => rerender());
 	rerender();
@@ -232,7 +256,8 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// Where the offered model would land, resolved once so the update button does not have to.
 	const newer = offeredGeneration(generation, readModelDirectories(paths), context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
-	const copy = cardCopy(state, platform, ctx.settings, generation);
+	const shown = downloadOnCard() ?? resolved;
+	const copy = cardCopy(state, platform, timingsFor(ctx.settings, generation.dir), shown.generation);
 
 	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
 	card.createEl("h4", { text: copy.heading });
@@ -292,21 +317,20 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 		const row = new Setting(card);
 		// A delete button on a nameless row asks the user to take on trust what it removes. Naming the
 		// directory beside it is the whole answer, and it is also where to look when the model is gone
-		// from outside the plugin.
-		if (copy.actions.some((action) => action.id === "delete")) row.setName("Model files").setDesc(paths.modelDir);
+		// from outside the plugin. A download gets it too: gigabytes are arriving somewhere, and a full
+		// disk is no help without knowing which one.
+		if (copy.actions.some((action) => ["delete", "cancel", "resume", "discard"].includes(action.id))) row.setName("Model files").setDesc(shown.paths.modelDir);
 		for (const action of copy.actions) {
 			row.addButton((button) => {
 				button.setButtonText(action.label);
 				if (action.emphasis === "cta") button.setCta();
-				// The class Obsidian styles a destructive button with. `setWarning()` is deprecated and
-				// `setDestructive()` needs 1.13, while the manifest floor is 1.5.7 -- the class predates both.
-				if (action.emphasis === "warning") button.buttonEl.addClass("mod-warning");
+				if (action.emphasis === "warning") button.setDestructive();
 				button.onClick(async () => {
 					switch (action.id) {
 						case "download":
 						case "resume":
 						case "retry-runtime":
-							beginDownload(paths, rerender, generation, paths);
+							beginDownload(shown.paths, rerender, shown.generation, paths);
 							break;
 						// The one action that writes into a *different* directory than the one in use: the
 						// newer model installs beside the working one, which is what makes it an offer.
@@ -328,6 +352,21 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 							rerender();
 							break;
 						case "delete": {
+							// Another complete model this computer can run stays: only this one goes. `removeLocalModel`
+							// would take the engine that one needs, and the backend would fall back past it. Covers a
+							// failed download of a newer model too. One it cannot run transcribes nothing, so it does not count.
+							const present = readModelDirectories(paths);
+							const usable = runnableGenerations(context).filter((each) => each.dir !== shown.generation.dir);
+							if (usable.some((each) => present.some((entry) => entry.complete && entry.name === each.dir))) {
+								if (readLocalModelSettings(ctx.settings).preferredModelDir === shown.generation.dir) {
+									setPreferredModelDir(ctx.settings, null);
+									await ctx.save();
+								}
+								removeModelDirectory(paths, shown.generation.dir);
+								download = null;
+								rerender();
+								break;
+							}
 							// The pick goes with the model: a name in `data.json` for a directory that is gone
 							// would be silently ignored, and then honoured again the day it reappears.
 							setPreferredModelDir(ctx.settings, null);
@@ -432,11 +471,17 @@ if (offeredOnThisPlatform()) {
 					// user with a lone card and no settings, and the redrawn card's own redraw was a no-op,
 					// so the tick after it moved nothing.
 					const host = containerEl.createDiv();
-					redrawCard = () => {
+					const redraw = (): void => {
 						host.empty();
 						renderCard(host, ctx, () => redrawCard());
 					};
+					redrawCard = redraw;
 					renderCard(host, ctx, () => redrawCard());
+					// A download tick after the tab tore this card down would draw into a card nobody sees.
+					// Only this card's own redraw is dropped: a newer card may have taken its place already.
+					return () => {
+						if (redrawCard === redraw) redrawCard = () => undefined;
+					};
 				}
 			: undefined,
 
@@ -447,7 +492,10 @@ if (offeredOnThisPlatform()) {
 		 */
 		noteContract: LOCAL_NOTE_CONTRACT,
 
-		reTranscribeCaveat: (settings, unitCount) => reTranscribeCaveat(settings, unitCount),
+		reTranscribeCaveat: (settings, unitCount) => {
+			const inUse = resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir);
+			return reTranscribeCaveat(inUse ? timingsFor(settings, inUse.generation.dir) : settings, unitCount);
+		},
 
 		backgroundConsent: {
 			get: (settings) => readLocalModelSettings(settings).backgroundConsent,

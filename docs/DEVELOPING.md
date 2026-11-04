@@ -24,13 +24,19 @@ Details that matter:
 
 - **No version bump on a branch.** The version gate checks consistency across the four files,
   not that a bump happened — bumping stays part of the release steps, on `main` (on `release/1.10.x`
-  for a maintenance release, see `docs/RELEASING.md`).
+  for a maintenance release, see `docs/RELEASING.md`). Exception: a branch that raises
+  `minAppVersion` sets the release's version with it, because the gate needs
+  `versions.json[version] == minAppVersion` and the old version's entry must keep its old floor.
 - **Changelog lines ride with the change**, under `## [Unreleased]`, in the same commit — exactly
-  as on `main`.
+  as on `main`. Exception: a feature built over several tickets on one branch gets its line from
+  the ticket that makes the sentence true (often a docs ticket at the end), as `to-tickets` plans
+  it; the line is in `[Unreleased]` before the branch merges.
 - **A branch with an open PR runs CI twice per push**: the push run checks the branch tip, the PR
   run checks the merge result against `main`. Both are meaningful; the duplication is accepted.
 - **No e2e checklist template.** What to test is written in the PR description when it isn't
   obvious — a standing template earned its upkeep nowhere yet.
+- **A live check or one-off script against `src/`** runs with `npm run ts -- <file.ts> [args]`
+  (bundled with `obsidian` aliased to the test stub; top-level `await` works).
 
 ## Watching CI from the terminal
 

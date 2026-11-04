@@ -25,6 +25,8 @@ import { type OcrTally, tallyOcr } from "./ocr-tally";
 import {
 	NOTE_NOT_SYNCED_NOTICE,
 	NOTEBOOK_GONE_NOTICE,
+	MARGIN_NOTES_OFF_NOTICE,
+	reReadDigestConfirmation,
 	reTranscribeConfirmation,
 	reTranscribeIsUseful,
 	reTranscribeNoteConfirmation,
@@ -53,7 +55,20 @@ import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
-import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
+import { createReadwiseClient } from "./readwise-client";
+import { deletedBookOf, readwiseBookUrl } from "./readwise-links";
+import {
+	pushBookAgain,
+	pushToReadwise,
+	type ReadwiseLastCheck,
+	readwiseNotice,
+	readwiseRecorderFor,
+	readwiseRecordingOn,
+	startReadwiseRecording,
+	tokenFingerprint,
+} from "./readwise-push";
+import { linkedDocumentIds } from "./zotero-links";
+import { invalidateRows, isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, settleMarginNotesChoice, settleZoteroSwitches, type SyncDeps, type SyncProgress } from "./sync-engine";
 import type { TextLayerTally } from "./text-layer";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -152,6 +167,12 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * cancelled dialog, a sync with nothing changed -- leaves the last one's figures to be copied.
 	 */
 	lastOcrTally: OcrTally | null = null;
+	/**
+	 * What readwise.io last answered -- the settings line's probe or the push after a sync -- for the
+	 * Readwise entry on the settings root (settings-redesign spec §5). Session state: a token refused a
+	 * week ago says nothing about the one in the Keychain now, and choosing another token forgets it.
+	 */
+	readwiseLastCheck: ReadwiseLastCheck = null;
 	private autoSyncLaunchTimer: number | null = null;
 	private autoSyncIntervalTimer: number | null = null;
 
@@ -461,6 +482,34 @@ export default class TaggedSyncPlugin extends Plugin {
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
 
+		// Free: it only opens a book, and a lapsed licence must not take the way there from someone's library.
+		this.addCommand({
+			id: "open-in-readwise",
+			name: "Open in Readwise",
+			// One pass over the index per palette keystroke, unlike *Re-transcribe this note*: a note never
+			// pushed has nothing to open, and a command that says so at run time would only be noise.
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				const url = file === null ? null : readwiseBookUrl(this.data.syncIndex.rows, this.data.readwiseBooks, file.path);
+				if (url === null) return false;
+				if (!checking) window.open(url);
+				return true;
+			},
+		});
+		this.addCommand({
+			id: "push-to-readwise-again",
+			name: "Push to Readwise again",
+			// Only while recording is on: off, the note would be read again for nothing, and switching on
+			// backfills it anyway (spec §5).
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				const docId = file === null || !readwiseRecordingOn(this.data.readwise, this.entitlement()) ? null : deletedBookOf(this.data.syncIndex.rows, this.data.readwiseBooks, file.path);
+				if (docId === null) return false;
+				if (!checking) void this.pushBookAgain(docId);
+				return true;
+			},
+		});
+
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
 
@@ -481,6 +530,20 @@ export default class TaggedSyncPlugin extends Plugin {
 		// One does: the local model's download runs on promises and a `window` interval, and a reload
 		// mid-download used to leave both running with no way to reach them.
 		for (const entry of ocrBackendEntries()) entry.onPluginUnload?.();
+	}
+
+	/** *Push to Readwise again* (ticket 22): starts a sync that records the document anew and pushes it as a new book. */
+	private async pushBookAgain(docId: string): Promise<void> {
+		// A run writes the index and the state back when it ends, over this change (spec §4.1).
+		if (this.isSyncing()) {
+			new Notice("Wait for the sync to finish, then push to Readwise again.");
+			return;
+		}
+		pushBookAgain(this.data, docId);
+		// Saved before the sync: if the run cannot start or fails, the next one still pushes the book.
+		await this.saveData(this.data);
+		// Recording the document again needs its pages, so the push comes with a whole sync, not alone.
+		await this.syncNow();
 	}
 
 	/**
@@ -682,6 +745,12 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.data.legacyOcrLossesMarked = true;
 				await this.saveData(this.data);
 			}
+			// Readwise's backfill, before opening the source for the same reason (Readwise spec §5).
+			if (startReadwiseRecording(this.data, readwiseRecordingOn(this.data.readwise, this.entitlement()))) await this.saveData(this.data);
+			// The switches, for the same reason: both settled before either is saved, one save between them.
+			const marginNotesMoved = settleMarginNotesChoice(this.data);
+			const zoteroSwitchesMoved = settleZoteroSwitches(this.data, linkedDocumentIds(this.data.zoteroLinks));
+			if (marginNotesMoved || zoteroSwitchesMoved) await this.saveData(this.data);
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;
@@ -703,6 +772,15 @@ export default class TaggedSyncPlugin extends Plugin {
 					// a zotero.org key: it links and names the paper, and the pass itself skips the write
 					// step (§5). A note rewritten without it loses its Zotero callout line and keeps its keys.
 					zotero: zoteroPassFor(this.zoteroHost(), !auto),
+					// Absent without Pro or with the switch off. What it records reaches `data.json` with the
+					// checkpoint after each unit; a token is not needed to record (Readwise spec §11 P2).
+					readwise: readwiseRecorderFor(this.data.readwise, this.entitlement(), {
+						books: () => this.data.readwiseBooks,
+						setBooks: (books) => {
+							this.data.readwiseBooks = books;
+						},
+						vaultName: () => this.app.vault.getName(),
+					}),
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -787,11 +865,40 @@ export default class TaggedSyncPlugin extends Plugin {
 			if (!auto) new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
 			await session?.close();
+			// After every sync attempt -- one that changed nothing, one whose source could not be opened --
+			// because that is how a failed push is retried (Readwise spec §11 P1, P22). Not on a run the
+			// user stopped: they asked for it to end (§11 P16).
+			if (!this.stopRequested) await this.pushReadwise(!auto);
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.
 			this.rearmAutoSyncInterval();
 		}
+	}
+
+	/**
+	 * The Readwise push (Readwise spec §4.3), with Pro, the switch on and a token on this computer. The
+	 * caller holds the run lock. Its failure is its own and never the sync's: what did not land stays
+	 * pending, and the Connection line carries the state; a notice only when `speak` (§11 P17).
+	 */
+	private async pushReadwise(speak: boolean): Promise<void> {
+		const token = this.readwiseToken();
+		if (token === null || !readwiseRecordingOn(this.data.readwise, this.entitlement())) return;
+		try {
+			const failure = await pushToReadwise(this.data, createReadwiseClient(token), await tokenFingerprint(token));
+			this.readwiseLastCheck = failure ?? "ok";
+			await this.saveData(this.data);
+			const notice = speak ? readwiseNotice(failure, this.data.readwiseBooks) : null;
+			if (notice !== null) new Notice(notice);
+		} catch (error) {
+			console.warn("Tagged Sync: the Readwise push failed", error);
+		}
+	}
+
+	/** This computer's Readwise token, from Obsidian's Keychain (Readwise spec §2), or null. Never logged. */
+	readwiseToken(): string | null {
+		const name = this.data.readwise.tokenSecret;
+		return name !== null ? this.app.secretStorage.getSecret(name) || null : null;
 	}
 
 	/**
@@ -846,6 +953,16 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.setStatus("asleep", "Tagged Sync: reMarkable not reachable", {
 					detail: "The last background sync was skipped because your reMarkable did not answer.",
 				});
+				// The push needs no tablet (Readwise spec §11 P22). It takes the run lock itself, so it
+				// never overlaps a run's push.
+				if (!this.syncing) {
+					this.syncing = true;
+					try {
+						await this.pushReadwise(false);
+					} finally {
+						this.syncing = false;
+					}
+				}
 			}
 			return;
 		}
@@ -951,6 +1068,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				// one spends nothing, and would otherwise be warned about anyway.
 				metered: backend.metered,
 				timeCaveat: entry?.reTranscribeCaveat?.(this.data.llmProviders[entry.id] ?? {}, unitCount) ?? "",
+				marginNotes: this.data.marginNotes,
 			}),
 			"Re-transcribe",
 		);
@@ -968,11 +1086,12 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
+		let readDigests = false;
 		try {
 			const opened = await this.openSource();
 			transport = opened.transport;
 			session = opened.session;
-			const { updated, unreadPages, index, stopped } = await reTranscribeAll(
+			const { updated, unreadPages, index, stopped, digestRowKeys } = await reTranscribeAll(
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
@@ -993,6 +1112,10 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Carries the refreshed block hashes -- without saving, the next sync would read this
 			// re-transcribe as a hand edit and refuse to update every note it touched.
 			this.data.syncIndex = index;
+			// Margin notes live in the digest, which only a sync writes. Saved before it: if it cannot
+			// start, the next one reads them.
+			readDigests = !stopped && this.data.marginNotes && digestRowKeys.length > 0;
+			if (readDigests) this.data.syncIndex = invalidateRows(index, digestRowKeys);
 			await this.saveData(this.data);
 			if (stopped) {
 				// The notes it did reach keep their fresh transcripts; the rest keep the old ones, and
@@ -1001,7 +1124,8 @@ export default class TaggedSyncPlugin extends Plugin {
 				new Notice(`Re-transcribe stopped. ${updated} note(s) refreshed; the rest are unchanged.`);
 			} else {
 				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
-				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages)}`);
+				// A vault of PDFs alone rewrites nothing here: the sync that follows says what it did.
+				if (updated > 0 || !readDigests) new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages)}`);
 			}
 			// The backend's own sentences, raised as a sync raises them: "Is it running?" for a closed local
 			// server. Not folded into the notice above -- across many notes the first warning may belong to
@@ -1017,6 +1141,23 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.syncing = false;
 			this.stopRequested = false;
 		}
+		if (readDigests) await this.syncNow();
+	}
+
+	/**
+	 * Makes a PDF's margin notes due to be read again, after asking where that costs money. True when
+	 * a sync should now read them. Saved first: if the sync cannot start, the next one does it.
+	 */
+	private async readDigestAgain(noteName: string, syncKey: string, backend: { id: string; metered: boolean }): Promise<boolean> {
+		if (!this.data.marginNotes) {
+			new Notice(MARGIN_NOTES_OFF_NOTICE);
+			return false;
+		}
+		const question = reReadDigestConfirmation({ noteName, backendId: backend.id, metered: backend.metered });
+		if (question !== null && !(await confirmDialog(this.app, "Re-transcribe this note", question, "Re-transcribe"))) return false;
+		this.data.syncIndex = invalidateRows(this.data.syncIndex, [syncKey]);
+		await this.saveData(this.data);
+		return true;
 	}
 
 	/**
@@ -1055,6 +1196,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
+		let readDigest = false;
 		try {
 			if (claim.refreshLicence) await this.refreshLicence(false);
 			const backend = this.resolveOcrBackend();
@@ -1099,6 +1241,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Current here: a page that went unread was sent, and the tally starts over on the first send.
 			const notice = reTranscribeNoteNotice(outcome, file.basename, unreadPages, this.lastOcrTally?.warnings[0]);
 			if (notice !== null) new Notice(notice);
+			if (outcome === "pdf-digest") readDigest = await this.readDigestAgain(file.basename, row.syncKey, backend);
 			// Every outcome leaves a final status: the bar was set to busy above, and a refusal that
 			// left it there would spin over a run that is long over.
 			if (outcome === "stopped") this.setStatus("stopped", "Tagged Sync: stopped · nothing changed");
@@ -1113,6 +1256,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.syncing = false;
 			this.stopRequested = false;
 		}
+		// Out here because it takes the lock this run has just let go of.
+		if (readDigest) await this.syncNow();
 	}
 
 	/**

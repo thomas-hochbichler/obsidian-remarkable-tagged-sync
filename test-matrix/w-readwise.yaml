@@ -1,0 +1,1841 @@
+# Readwise push (spec `.scratch/readwise-integration/spec.md`), starting with the client that talks
+# to readwise.io's Highlights API v2.
+#
+# The load-bearing rows are W1.8 (a listing that fails part-way is a failure, never a shorter list --
+# a shorter one would mark books deleted that the user never touched) and W1.12/W1.13 (which items
+# Readwise refused, so one bad item never blocks the rest). Both are silent when wrong.
+
+- feature: W1
+  name: readwise.io
+  code: src/readwise-client.ts
+  tier: pro
+  scenarios:
+    - id: W1.1
+      scenario: The Connection line asks whether the token works
+      expect: '`GET /auth/` with `Authorization: Token …`; 204 is connected'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > sends the token and says connected on 204"
+
+    - id: W1.2
+      scenario: The token is wrong
+      expect: '`rejected` -- the repair is a new token, not waiting'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what 401 means"
+
+    - id: W1.3
+      scenario: The plan has no API access
+      expect: '`no-api`, read from 403 until spec §12 F5 is checked on an expired trial'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what 403 means"
+
+    - id: W1.4
+      scenario: readwise.io answers 500
+      expect: '`unreachable` -- "Readwise didn''t answer"'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what 500 means"
+
+    - id: W1.5
+      scenario: The machine is offline
+      expect: '`unreachable`, never a throw out of the settings tab'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what a network failure means"
+
+    - id: W1.6
+      scenario: A server that accepts the connection and never answers
+      expect: The call gives up. The push is awaited on the sync path, so a hanging socket would be a sync that never ends
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > stops waiting for a server that never answers"
+
+    - id: W1.7
+      scenario: Listing our books over more than one page
+      expect: Only `source=tagged_sync`, every page followed through `next`, author `null` kept as `null`
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > asks only for books made with our source, and follows every page"
+
+    - id: W1.8
+      scenario: A later page of the book listing fails
+      expect: The whole listing fails. A shorter list would read as books the user deleted (spec §11 P24)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > fails the whole listing when a later page fails, never answering a shorter list"
+
+    - id: W1.9
+      scenario: '`next` points away from readwise.io'
+      expect: Not followed; the token goes with every request and stays on readwise.io
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > does not follow a next page that leads away from readwise.io, so the token stays there"
+
+    - id: W1.10
+      scenario: The book listing answers something that is not a listing
+      expect: A failure, not an empty list
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > fails on an answer that is not a listing"
+
+    - id: W1.35
+      scenario: The book listing carries a book without an id
+      expect: A failure, not a silently shorter list
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > fails on a book without an id"
+
+    - id: W1.36
+      scenario: readwise.io keeps answering with a `next` page
+      expect: Gives up after 100 pages -- an error, not a sync that never ends
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > gives up on a server that never stops paging"
+
+    - id: W1.11
+      scenario: Items are pushed, one a book's with author and note, one an article's without
+      expect: 'Each item''s own `category`, `source_type: tagged_sync`, `location_type: page`, `highlight_url`; an absent author or note is left out, never sent blank (a blank field fails the whole call)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > sends each item as a page-located highlight of a book or article from our source, leaving out what is absent"
+
+    - id: W1.12
+      scenario: Readwise refuses some items of a call with a per-item list
+      expect: The refused items by `highlight_url`, so they are set aside and the rest re-sent (spec §11 P13)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > names the items Readwise refused, so the rest can be sent again"
+
+    - id: W1.13
+      scenario: Readwise refuses the one item of a single-item call
+      expect: That item is named. Readwise answers one item with its field errors alone, not a list of one (ticket 15 live check)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > names the one item of a single-item call that Readwise refused"
+
+    - id: W1.14
+      scenario: A single-item 400 that names no field
+      expect: '`bad-request` -- nothing to set aside, so it is not read as a refusal of that item'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 on a single-item call that names no field as its own failure"
+
+    - id: W1.37
+      scenario: A single-item 400 whose body is not an object
+      expect: '`bad-request`'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 on a single-item call that is not an object as its own failure"
+
+    - id: W1.15
+      scenario: A 400 without a per-item list
+      expect: '`bad-request`, its own outcome (spec §6)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 with no list at all as its own failure"
+
+    - id: W1.16
+      scenario: A 400 whose list does not match the items sent
+      expect: '`bad-request` -- the positions no longer say which item is whose'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 with a list of another length as its own failure"
+
+    - id: W1.17
+      scenario: A 400 whose list refuses nothing
+      expect: '`bad-request` -- re-sending the same items would only loop'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 with a list that refuses nothing as its own failure"
+
+    - id: W1.18
+      scenario: A push answered 401
+      expect: '`rejected`; the push stops at once'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > stops on 401 as rejected"
+
+    - id: W1.19
+      scenario: A push answered 403
+      expect: '`no-api`; the push stops at once'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > stops on 403 as no-api"
+
+    - id: W1.20
+      scenario: A push answered 502
+      expect: '`unreachable`; what is pending stays pending'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > stops on 502 as unreachable"
+
+    - id: W1.21
+      scenario: More than 1,000 items handed to one call
+      expect: Refused before anything is sent; the push step batches (spec §11 P15)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > refuses a batch over the limit before sending anything"
+
+    - id: W1.22
+      scenario: A push lands, every item of each book among `modified_highlights`
+      expect: Ids mapped to `highlight_url` by send order, per book; author `null` matches an omitted author (spec §11 P5)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > maps the ids of a book back to the items in send order when the counts match"
+
+    - id: W1.23
+      scenario: A push lands, but an unchanged item is missing from `modified_highlights`
+      expect: No ids mapped for that book -- order no longer says which id is whose
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > maps no ids for a book whose modified highlights are fewer than the items sent"
+
+    - id: W1.24
+      scenario: A push lands with an answer that cannot be read
+      expect: Still pushed, with no books and no ids. It landed; the ids are best effort
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > still counts as pushed when the answer cannot be read"
+
+    - id: W1.38
+      scenario: A push lands; one book entry has no id, another no `modified_highlights`
+      expect: The unreadable entry is skipped, the other book kept with no ids
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > skips a book entry it cannot read, and takes missing modified highlights as none"
+
+    - id: W1.25
+      scenario: Looking up a book's highlights to find one to delete
+      expect: '`book_id=…`, every page, `{id, url}` with `url` = our `highlight_url` or `null`'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "finding a book's highlights > lists one book's highlights over every page as id and url"
+
+    - id: W1.26
+      scenario: The highlight listing carries an entry without an id
+      expect: A failure, not a silently shorter list
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "finding a book's highlights > fails on a highlight without an id"
+
+    - id: W1.27
+      scenario: Deleting a highlight answered 204
+      expect: Gone
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "deleting a highlight > counts 204 as gone"
+
+    - id: W1.28
+      scenario: Deleting a highlight that is already gone (404)
+      expect: Gone too -- the record can be dropped either way
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "deleting a highlight > counts 404 as gone"
+
+    - id: W1.29
+      scenario: Deleting a highlight answered 500
+      expect: Reported; the delete stays pending
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "deleting a highlight > reports any other answer"
+
+    - id: W1.39
+      scenario: A book the user renamed in Readwise gets its names back after a push
+      expect: '`PATCH /books/<id>/` with `title_override` and `author_override` -- the push itself always resets both to ours (spec §11 P25)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > sets the title and author the user gave the book, as overrides"
+
+    - id: W1.40
+      scenario: Only the title or only the author was changed by the user
+      expect: The other is left out, not sent blank
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > leaves out a name that is not to change"
+
+    - id: W1.41
+      scenario: Readwise refuses the rename
+      expect: Reported, so the push can keep the names for the next try
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > reports a rename Readwise did not take"
+
+    - id: W1.42
+      scenario: A book whose category the user changed in Readwise gets it back after a push
+      expect: '`PATCH /books/<id>/` with `category` -- a push resets it to the one it sends (research/20-author-and-category-check.ts)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > sets the category the user gave the book"
+
+    - id: W1.43
+      scenario: The create answer names the book with an author over 100 characters, shortened, and a title the push sent with a trailing space
+      expect: Matched all the same, so the ids are learnt -- the ACON paper in the Demo vault learnt none
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > knows its book in the answer by the title and author as readwise.io holds them"
+
+    - id: W1.44
+      scenario: How readwise.io holds an author it was sent
+      expect: Up to 100 characters as sent; longer, the first 100 and "..." (measured 2026-11-02)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > says readwise.io holds an author of 100 characters as sent, a longer one as its first 100 and ..."
+
+    - id: W1.45
+      scenario: How readwise.io holds a title it was sent
+      expect: Trimmed; not shortened up to 511 characters (research/20-title-check.mjs)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > says readwise.io holds a title without the spaces around it"
+
+    - id: W1.30
+      scenario: 429 with a short `Retry-After`
+      expect: Waited once, asked again
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > waits out a short Retry-After on 429 once and asks again"
+
+    - id: W1.31
+      scenario: 503 with a short `Retry-After`
+      expect: Waited once, asked again
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > waits out a short Retry-After on 503 once and asks again"
+
+    - id: W1.32
+      scenario: 429 without `Retry-After`
+      expect: Reported at once, no wait
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > reports a 429 without Retry-After at once"
+
+    - id: W1.33
+      scenario: 429 with a `Retry-After` over 30 s
+      expect: Reported at once -- past half a minute the next sync does it
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > reports a 429 with a Retry-After over half a minute at once"
+
+    - id: W1.34
+      scenario: A second 429 after the wait
+      expect: Reported, never a loop
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > reports a second 429 instead of waiting again"
+
+# Which book a document becomes (spec §1.2, §11 P7). The title and author are the book's key in
+# Readwise, so a wrong pick here is a book under the wrong name for good -- the recorder freezes it.
+- feature: W2
+  name: The book's title and author
+  code: src/readwise-book.ts
+  tier: pro
+  scenarios:
+    - id: W2.1
+      scenario: A document linked to a Zotero paper that is also an EPUB with its own metadata
+      expect: The paper's title and author win over the OPF and the tablet's name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names a Zotero paper, ahead of the book's own metadata and the tablet's name"
+
+    - id: W2.2
+      scenario: A paper with two authors
+      expect: '"First Last" each, joined with ", " in Zotero''s order'
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names several authors, in Zotero's order"
+
+    - id: W2.3
+      scenario: A paper by an institution
+      expect: Its one name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names an institution, by its one name"
+
+    - id: W2.4
+      scenario: A paper with an editor and an author
+      expect: Only the author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names only the authors when a paper also has editors"
+
+    - id: W2.5
+      scenario: A paper with editors only
+      expect: Every creator, so the book still names someone; a person with no first name is just the family name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names every creator when a paper has editors only"
+
+    - id: W2.12
+      scenario: A paper whose only author's name is blank, beside an editor
+      expect: The editor -- a blank name is no author, so "none → every creator" applies
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the editors when the only author's name is blank"
+
+    - id: W2.6
+      scenario: A paper with no creators
+      expect: No author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names no author at all for a paper with no creators"
+
+    - id: W2.7
+      scenario: A Zotero item whose title is only spaces
+      expect: The tablet's name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the tablet's name when the Zotero item's title is blank"
+
+    - id: W2.8
+      scenario: An EPUB whose OPF has a title and two authors
+      expect: Both, authors joined with ", "
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names an EPUB's own title and authors"
+
+    - id: W2.9
+      scenario: An EPUB whose OPF names neither
+      expect: The tablet's name, no author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the tablet's name, and no author, for an EPUB without metadata"
+
+    - id: W2.10
+      scenario: A notebook or typed document
+      expect: The tablet's name, no author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the tablet's name, and no author, for a notebook"
+
+    - id: W2.11
+      scenario: No author anywhere
+      expect: The `author` key is absent, never `""` -- Readwise refuses a blank author, and a placeholder would invent one
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > leaves out the author key rather than sending it empty"
+
+- feature: W3
+  name: An EPUB's own title and authors
+  code: src/epub-text.ts
+  tier: pro
+  scenarios:
+    - id: W3.1
+      scenario: An OPF with a `dc:title` and one `dc:creator`, the title written with an entity
+      expect: Both read, the entity decoded
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > reads the title and the one author off the OPF"
+
+    - id: W3.2
+      scenario: An OPF with two `dc:creator`s
+      expect: Both, in OPF order
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > keeps every author, in the order the OPF lists them"
+
+    - id: W3.3
+      scenario: A blank `dc:title` and an empty `dc:creator`
+      expect: No title and no authors -- never `""`, which would name the Readwise book nothing
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > leaves out a blank title and blank authors rather than reporting them empty"
+
+    - id: W3.4
+      scenario: An OPF with neither element
+      expect: No title, no authors
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > reports no title and no authors for a book without them"
+
+    - id: W3.5
+      scenario: An archive with no OPF at all
+      expect: The prose is still read; only the metadata is missing. A quote's spelling must not depend on the metadata
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > still reads a book that has no OPF"
+
+    - id: W3.6
+      scenario: An OPF entry that claims deflate but cannot be inflated
+      expect: The prose is still read, with no title and no authors -- never a throw
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > still reads a book whose OPF cannot be decompressed"
+
+- feature: W4
+  name: A Zotero item's creators
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: W4.1
+      scenario: An item with a person, an institution, an editor, a creator with no name, and one with no role and no family name
+      expect: Every named creator with its `creatorType` (missing = ""), a person as first/last (a missing one = ""), an institution as `name`; the nameless one dropped
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > hands out every creator, person or institution, with its role"
+
+- feature: W5
+  name: The paper the Zotero pass hands to the Readwise book
+  code: src/zotero-sync.ts
+  tier: pro
+  scenarios:
+    - id: W5.1
+      scenario: A document linked to an attachment under a paper
+      expect: The paper's title and creators leave the pass beside its keys
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > hands back the item's title and every creator, for the Readwise book"
+
+    - id: W5.2
+      scenario: A document linked to a standalone PDF (or one whose paper was deleted)
+      expect: No paper -- the attachment's title is a label like "Full Text PDF", and every such book would share it
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > hands back no paper for a standalone PDF"
+
+# What each digest entry becomes in Readwise (spec §1.3, §11 P8, P9, P12). The load-bearing rows are
+# W6.18/W6.22 (a location that differs between the units of one document re-pushes forever) and
+# W6.8/W6.10/W6.12/W6.14 (an unread entry must never read as erased -- that would delete it in Readwise).
+- feature: W6
+  name: Digest entries as Readwise highlights
+  code: src/readwise-highlights.ts
+  tier: pro
+  scenarios:
+    - id: W6.1
+      scenario: A marked sentence on a page printed as 12
+      expect: 'The sentence with the marked words in `**…**`, location 12, `highlight_url` = `obsidian://open?vault=<vault>&file=<render>#page=<embedPage>&highlight=<docId>/<pageId:crdtId>`, each value encoded'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > becomes its sentence with the marked words in bold, on the page it is printed on, linking back to its entry"
+
+    - id: W6.2
+      scenario: Two marked runs apart in one sentence
+      expect: Two bold stretches
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > bolds two runs apart"
+
+    - id: W6.3
+      scenario: Overlapping runs -- the versions of a selection the reader adjusted
+      expect: 'One bold stretch, never `**…****…**`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > bolds overlapping runs as one stretch"
+
+    - id: W6.4
+      scenario: One run found, one not
+      expect: The found run bold, the other left out
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > leaves out a run it cannot find in the sentence and bolds the rest"
+
+    - id: W6.5
+      scenario: No run found, or none known
+      expect: The plain sentence
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > sends the plain sentence when no run is found"
+
+    - id: W6.6
+      scenario: Two notes nested under a highlight
+      expect: 'Their transcripts as its `note`, joined by a blank line'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > carries the margin notes written at it as its note, joined by a blank line"
+
+    - id: W6.7
+      scenario: A highlight with no note
+      expect: 'No `note` key -- Readwise refuses `""`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > carries no note when nothing was written at it"
+
+    - id: W6.8
+      scenario: One nested note unread, one read
+      expect: 'The readable one as `note`, plus `noteUnread` so the recorder keeps the note Readwise holds (spec §11 P12)'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > says when a note written at it could not be read, beside the one that could"
+
+    - id: W6.9
+      scenario: Its only nested note unread
+      expect: 'No `note`, `noteUnread` set'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > says so with no note at all when its only note could not be read"
+
+    - id: W6.10
+      scenario: No text layer and no recorded text this sync
+      expect: '`unread`, no text -- the recorder skips that one record (spec §11 P12)'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > is unread, with no text, when its sentence is empty"
+
+    - id: W6.11
+      scenario: A standalone margin note
+      expect: 'Its transcript as the text, no `note`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a margin note of its own > becomes its transcript, with no note"
+
+    - id: W6.12
+      scenario: An unread note beside a read one on one page
+      expect: 'Only the unread one is `unread`; the exemption is per item, never per page'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a margin note of its own > is unread when it could not be transcribed, and the readable note beside it is not"
+
+    - id: W6.13
+      scenario: A page added after page 12
+      expect: Its transcript, line breaks kept, location 12 (spec §11 P8)
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a page added on the tablet > becomes its transcript, line breaks kept, on the page it follows"
+
+    - id: W6.14
+      scenario: Its handwriting unread, typed text standing in
+      expect: '`unread` -- what the entry says is less than what the page says'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a page added on the tablet > is unread when its handwriting could not be read, whatever text stands in for it"
+
+    - id: W6.15
+      scenario: Read, nothing legible
+      expect: 'No item: never pushed blank'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a page added on the tablet > gives nothing when it was read and holds no text"
+
+    - id: W6.16
+      scenario: A PDF page printed as 12, embedded as page 3
+      expect: 12, never the embed page
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is the printed label where that is a number"
+
+    - id: W6.17
+      scenario: 'A page labelled `xii`, or `0`'
+      expect: Its source index + 1
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is the page's place in the PDF where the printed label is no number"
+
+    - id: W6.27
+      scenario: A page with no label and no known source page (the type allows it; the pipeline never builds it)
+      expect: Location 1 -- never 0 or NaN
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is 1 for a page that gives neither a number nor a place in the PDF"
+
+    - id: W6.18
+      scenario: One PDF page in both units
+      expect: The same location -- a unit-relative one would re-push forever
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is the same for a PDF page in its whole-document unit and in its page-tag unit"
+
+    - id: W6.19
+      scenario: Added after a page printed as 12
+      expect: "12"
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > of a page added on the tablet > is that of the page it follows, by its printed label"
+
+    - id: W6.20
+      scenario: Added after a roman-numbered page
+      expect: That page's source index + 1
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > of a page added on the tablet > is that of the page it follows, by its place in the PDF where the label is roman"
+
+    - id: W6.21
+      scenario: Added before page 1
+      expect: "1"
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > of a page added on the tablet > is 1 ahead of the document's first page"
+
+    - id: W6.22
+      scenario: A typed page, third in its notebook, in both units
+      expect: '3 in both: its place in the page order, not its label or source index, which are unit-relative'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is a typed page's place in the document's page order, the same in its whole-document and its page-tag unit"
+
+    - id: W6.23
+      scenario: A sentence of 10,889 characters
+      expect: 'Cut to at most 8,191, ending in `…` (spec §11 P9)'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > is cut to the limit, ending in an ellipsis"
+
+    - id: W6.24
+      scenario: A long sentence with runs before, across and past the cut
+      expect: 'Final length with bold marks ≤ 8,191; the crossed run closed at the cut, the later one dropped, never an unclosed `**`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > is cut, bold marks counted, closing a run the cut goes through and dropping one past it"
+
+    - id: W6.25
+      scenario: A nested note, a margin note and an added page over the limit
+      expect: 'Each cut to 8,191 with `…`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > cuts a margin note's and an added page's text as well, and a highlight's note"
+
+    - id: W6.26
+      scenario: A text of exactly 8,191 characters
+      expect: Unchanged
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > is left whole at exactly the limit"
+
+# The key the Readwise state is keyed by, carried out of the digest (spec §1.3). The source index of
+# the page an added page follows (P8) rides on `added`, asserted by Y-zotero's "where it sits" rows.
+- feature: W7
+  name: The digest's Readwise key
+  code: src/digest-pipeline.ts
+  tier: pro
+  scenarios:
+    - id: W7.1
+      scenario: Every highlight and note of the fixture page, built twice
+      expect: '`key` = `pageId:crdtId`, the pair the block id hashes; equal across builds'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest determinism > keys every entry by its page and CRDT id, the pair its block id is hashed from, the same on every build"
+
+    - id: W7.2
+      scenario: A page added on the device
+      expect: '`key` = `<pageId>:page`'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest determinism > keys a page added on the device by its page, with `page` for the CRDT id"
+
+# Recording one unit (spec §3, §4.2): what Readwise should hold, merged into the document's book with
+# no network. One row per state row of spec §8. The load-bearing rows are W8.6-W8.9 (what a unit
+# covers -- too much deletes highlights of pages it never looked at, too little never cleans up a
+# deleted page), W8.13-W8.16 (an unread transcription must not delete or blank what Readwise holds)
+# and W8.17-W8.19 (margin notes off must not delete every standalone note). All are silent when wrong.
+- feature: W8
+  name: Recording a unit for Readwise
+  code: src/readwise-state.ts
+  tier: pro
+  scenarios:
+    - id: W8.1
+      scenario: A document recorded for the first time
+      expect: A book under the identity's title and author, every read entry a pending `want`
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > gives a new document its book, named once, with every mark waiting to be pushed"
+
+    - id: W8.2
+      scenario: A pushed mark changed on the tablet
+      expect: '`want` = the new text in the same record; `pushed` and `id` kept'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > wants the new text of a mark changed on the tablet, in the same record"
+
+    - id: W8.3
+      scenario: Nothing changed
+      expect: Nothing pending
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > wants nothing for a mark that is what Readwise holds"
+
+    - id: W8.4
+      scenario: Same text, but the page number or the note changed
+      expect: A change -- the whole `ReadwiseText` is compared
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > counts a moved page or an added note as a change, the whole text compared"
+
+    - id: W8.5
+      scenario: A pushed mark erased on the tablet
+      expect: '`want: null` (delete), also when the user edited it in Readwise'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > wants a mark erased on the tablet deleted, also one edited in Readwise"
+
+    - id: W8.6
+      scenario: A mark erased before its first push landed
+      expect: The record is dropped; nothing reaches Readwise
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > drops a mark erased before its first push landed: nothing reaches Readwise"
+
+    - id: W8.7
+      scenario: A page-tag unit with no marks, beside a record of another page
+      expect: Only its own page's record is deleted
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > is the one page of a page-tag unit: a mark of another page is not erased by it"
+
+    - id: W8.8
+      scenario: The digest failed to build
+      expect: Covers nothing; every record stays
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > is nothing for a digest that failed to build"
+
+    - id: W8.9
+      scenario: A page deleted on the tablet, then a whole-document unit
+      expect: Its highlights are deleted -- the unit covers every record of the book
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > is every record of the book for a whole-document unit, so a page deleted on the tablet takes its highlights with it"
+
+    - id: W8.10
+      scenario: A page added on the tablet, pushed, then erased
+      expect: '`want: null`'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > deletes a page added on the tablet and then erased"
+
+    - id: W8.11
+      scenario: A document tag and a page tag record one document in one run, reading a note differently
+      expect: The later unit's `want` wins on its page; the other pages keep what the first recorded
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > lets the later of two units of one document win on their page, and leaves the other pages to the first"
+
+    - id: W8.12
+      scenario: A passage re-selected so its key changed
+      expect: 'Old key `want: null`, new key `want` = the text'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > deletes a passage re-selected under a new key and creates it under that key"
+
+    - id: W8.13
+      scenario: An EPUB re-laid out -- same key, other text
+      expect: '`want` = the new text'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > overwrites a highlight of an EPUB re-laid out, the same key now holding other text"
+
+    - id: W8.14
+      scenario: A margin note unread this sync, beside a read highlight
+      expect: The note's record untouched; the highlight recorded
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > leaves its own record as it is, neither pushed nor deleted, and records the entry beside it"
+
+    - id: W8.15
+      scenario: An unread entry with no record yet
+      expect: No record created
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > creates nothing for an entry never read"
+
+    - id: W8.16
+      scenario: A highlight whose nested note was unread
+      expect: Keeps the stored note; text and page compared as usual
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > keeps the note Readwise holds for a highlight whose nested note could not be read, the text compared as usual"
+
+    - id: W8.17
+      scenario: A pending note change, then the nested note unread
+      expect: The pending note is kept, not voided against the older pushed note
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > keeps a pending note rather than voiding it against the older one Readwise holds"
+
+    - id: W8.18
+      scenario: Margin notes switched off
+      expect: Standalone notes and added pages not covered; each highlight keeps its note
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > leaves the notes and added pages in Readwise as they are, and each highlight its note"
+
+    - id: W8.19
+      scenario: Margin notes off and a highlight moved
+      expect: '`want` = the moved highlight with its stored note'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > still records a highlight's own change, with the note it had"
+
+    - id: W8.20
+      scenario: Margin notes switched on again
+      expect: Changes since then are pending; an added page gone meanwhile is deleted
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > records what changed meanwhile once they are on again"
+
+    - id: W8.21
+      scenario: An item Readwise refused, unchanged on the tablet
+      expect: Stays set aside (`want` = `rejected`)
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an item Readwise refused > stays set aside while the tablet shows what was refused"
+
+    - id: W8.22
+      scenario: A refused item changed on the tablet
+      expect: Pending again
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an item Readwise refused > is wanted again once it changes on the tablet"
+
+    - id: W8.23
+      scenario: A book deleted in Readwise
+      expect: Nothing recorded into it
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > records nothing into a book deleted in Readwise"
+
+    - id: W8.24
+      scenario: The document renamed on the tablet or matched to Zotero after its first record
+      expect: Same title and author (frozen, P21)
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > stays the one it was first recorded under when the document is renamed on the tablet or matched to Zotero later"
+
+    - id: W8.25
+      scenario: A new document's unit with nothing to record
+      expect: No book yet, so nothing is frozen
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > is not taken before the document has a mark to record"
+
+    - id: W8.26
+      scenario: Two documents with the same title and author
+      expect: '" (2)", " (3)", … (P6)'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > gets a number when another document of this vault already has the same title and author"
+
+    - id: W8.27
+      scenario: The title clashes with a book deleted in Readwise
+      expect: Numbered as well -- the deleted book still exists there
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > counts a book deleted in Readwise as taken"
+
+    - id: W8.28
+      scenario: Same title, another author
+      expect: No number
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > needs no number for the same title under another author"
+
+    - id: W8.29
+      scenario: Title over 511, author over 1,024 characters, alone and numbered
+      expect: Cut to the limit ending in "…"; the number after the cut
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > is cut to Readwise's limits, ending in an ellipsis, the number kept after the cut"
+
+    - id: W8.30
+      scenario: Another document's book cannot be read by this build
+      expect: Left in the map exactly as it is
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > leaves another document's unreadable book exactly where it is"
+
+    - id: W8.31
+      scenario: The document's book carries `shown`, `bookId` and a field of a newer build
+      expect: All kept by the recorder
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > keeps what the push and a newer build wrote on this document's book"
+
+    - id: W8.32
+      scenario: A pending change, then the tablet back to what Readwise holds
+      expect: The change is voided
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the tablet back to what Readwise holds > voids a pending change"
+
+    - id: W8.33
+      scenario: A pending delete, then the mark back on the tablet as Readwise holds it
+      expect: The delete is voided
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the tablet back to what Readwise holds > voids a pending delete"
+
+    - id: W8.34
+      scenario: Records with a text, a delete, nothing, a refused text, a refused text changed
+      expect: Pending, pending, not, not, pending
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > knows what is pending: a text or a delete, never what Readwise refused unchanged"
+
+    - id: W8.35
+      scenario: Several books, one deleted with a pending change, one unreadable
+      expect: Only the readable, not deleted books with something pending are listed
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > lists the documents waiting to be pushed, none of them in a deleted book"
+
+    - id: W8.36
+      scenario: The Connection line's counts
+      expect: Books with a pushed highlight, highlights pushed, items set aside -- deleted books left out
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > counts the books and highlights pushed, and the items set aside, for the Connection line"
+
+    - id: W8.37
+      scenario: '*Open in Readwise* asks for a book id'
+      expect: The id; none for a deleted, unmatched, unreadable or unknown book
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > gives a document's book id, none for a book deleted in Readwise or never matched"
+
+    - id: W8.38
+      scenario: The book holds a highlight record this build cannot read
+      expect: Kept beside the records this unit writes
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > keeps a record it cannot read beside the ones it records"
+
+    - id: W8.39
+      scenario: A book whose `shown` and `highlights` are partly junk
+      expect: Read field by field; what is unreadable is left out, the book still reads
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > reads a book field by field, what it cannot read left out"
+
+    - id: W8.40
+      scenario: This document's own book cannot be read (no title), but carries a book id
+      expect: Nothing recorded, the entry left as it is -- a new title beside that id would open a second book
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > records nothing into this document's book when it cannot read it"
+
+    - id: W8.41
+      scenario: The book carries a known field this build cannot read (`author` blank)
+      expect: Not written back
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > drops a field it knows but cannot read, rather than writing it back beside the one it read"
+
+    - id: W8.42
+      scenario: Margin notes off, and a note's entry is handed to the recorder all the same
+      expect: Ignored; the rule holds in the recorder, not by the digest's convention
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > ignores a note or an added page handed to it all the same"
+
+    - id: W8.43
+      scenario: The document has a blank name on the tablet and nothing else names it
+      expect: '"Untitled" -- never a blank title'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > is Untitled for a document with no name on the tablet"
+
+    - id: W8.44
+      scenario: A book with pending and settled records
+      expect: Only the pending ones, by key
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > gives a book's records waiting to be pushed"
+
+    - id: W8.45
+      scenario: The push writes a book back
+      expect: Unknown fields and unreadable records kept; a known field it could not read dropped
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > writes a book back with what this build cannot read kept, and a known field it could not read dropped"
+
+    - id: W8.46
+      scenario: A new document is recorded as an article
+      expect: 'Its book holds `category: articles`'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's category > is the one the unit says, for a new book"
+
+    - id: W8.47
+      scenario: A book recorded before books had a category is recorded again
+      expect: It takes the unit's category -- not part of the key in Readwise (`research/20-category-check.ts`), so not frozen with the name
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's category > is written again on every record, so a book recorded before there was one takes it"
+
+    - id: W8.48
+      scenario: A book stored without a category, or with one this build does not know, is read
+      expect: '`books` -- what the build before sent for every book'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's category > reads as books for a book stored without one"
+
+- feature: W9
+  name: Recording in the sync
+  code: src/sync-engine.ts, src/readwise-push.ts
+  tier: pro
+  scenarios:
+    - id: W9.1
+      scenario: An annotated PDF is synced under a document tag
+      expect: Recorded after its note is written; whole-document scope, numbered by the PDF's own pages
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > records a PDF's whole-document unit after its note is written, numbered by the PDF's own pages"
+
+    - id: W9.2
+      scenario: The same document also has a page tag
+      expect: Two records into one book -- the document's scope and the page's
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > records a page-tag unit for its one page, beside the document tag's unit of the same document"
+
+    - id: W9.3
+      scenario: The digest build throws
+      expect: Recorded with scope none and no pages -- nothing read, nothing erased
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > records nothing a failed digest build could speak for"
+
+    - id: W9.4
+      scenario: Margin notes are switched off in the vault
+      expect: The recorder hears so, and leaves notes in Readwise as they are (spec §11 P20)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > hands over the vault's margin-notes setting, which the digest was built under"
+
+    - id: W9.5
+      scenario: A notebook with one typed page among handwritten ones
+      expect: Its typed page recorded, numbered by the notebook's page order (spec §1.1, §11 P8)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > records a notebook's typed pages, numbered by the notebook's page order"
+
+    - id: W9.6
+      scenario: A handwritten notebook (or one whose typed pages became handwriting)
+      expect: Recorded as having nothing -- no book for a new one, the old typed pages deleted (spec §4.2)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > records a handwritten notebook as having nothing, so typed pages it no longer has are cleaned up"
+
+    - id: W9.7
+      scenario: The note was edited by hand, then the document changes
+      expect: Not recorded -- the frozen note's changes never reach Readwise
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > records nothing for a note frozen by a hand edit"
+
+    - id: W9.8
+      scenario: The Zotero pass linked the document to a paper
+      expect: The paper's title and creators offered for the book's name
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > offers the paper the Zotero pass linked to name the book"
+
+    - id: W9.9
+      scenario: An EPUB is recorded for the first time
+      expect: Its OPF title and authors offered, fetched even when no quote needed the book (review B10)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > offers an EPUB's own title and authors"
+
+    - id: W9.10
+      scenario: The recorder does not ask for the book's sources
+      expect: The `.epub` is not downloaded
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > fetches the EPUB only when the recorder asks for the sources"
+
+    - id: W9.11
+      scenario: The `.epub` cannot be fetched
+      expect: Recorded all the same, offered only the tablet's name
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > offers no EPUB metadata when the book cannot be fetched"
+
+    - id: W9.16
+      scenario: An EPUB is synced
+      expect: Its unit says `books`
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > files an EPUB under books"
+
+    - id: W9.17
+      scenario: A PDF is synced (a notebook's typed pages likewise, W9.5)
+      expect: Its unit says `articles` -- the user expected an annotated paper under Articles
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > files a PDF under articles"
+
+    - id: W9.12
+      scenario: The recorder is handed a unit
+      expect: The digest mapped and recorded into the document's book, named from its sources
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise recorder > records a unit's digest as what Readwise should hold, in a book named from its sources"
+
+    - id: W9.13
+      scenario: A document already has its book
+      expect: Its sources are not asked again -- the name is frozen at the first record (spec §11 P21)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise recorder > asks for the sources only for a document that has no book yet"
+
+    - id: W9.14
+      scenario: Recording turns on (switch, Pro gained, account switched)
+      expect: Every active row due once and the flag set together; the next sync changes nothing
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "startReadwiseRecording (spec §5) > makes every active document due once when recording starts, and marks that it has"
+
+    - id: W9.15
+      scenario: Recording is off at the start of a sync
+      expect: The flag goes, so switching back on backfills again
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "startReadwiseRecording (spec §5) > forgets the backfill while recording is off"
+
+- feature: W10
+  name: The push
+  code: src/readwise-push.ts
+  tier: pro
+  scenarios:
+    - id: W10.1
+      scenario: A sync with nothing pending and the same token
+      expect: No request at all
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > sends nothing while nothing is pending and the token is the one the state belongs to"
+
+    - id: W10.2
+      scenario: The first push ever -- no fingerprint, no book id
+      expect: State kept and pushed; book id, highlight ids and the fingerprint stored
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > pushes a document for the first time, and keeps the book id and highlight ids it learns"
+
+    - id: W10.3
+      scenario: Two pending highlights, one with a note
+      expect: Each item carries the frozen title and author; `note` only where there is one
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > sends the book's frozen title and author with every item, and a note only where there is one"
+
+    - id: W10.4
+      scenario: 1,001 pending highlights
+      expect: Two calls, 1,000 and 1 (spec §11 P15)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > sends at most 1,000 highlights per call"
+
+    - id: W10.5
+      scenario: Readwise refuses one item of two
+      expect: It is set aside, the other re-sent and landed; the next push leaves the set-aside one alone
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > sets aside what Readwise refuses and sends the rest once more"
+
+    - id: W10.6
+      scenario: Readwise refuses the re-send too
+      expect: '`bad-request`, the rest stays pending'
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > stops when Readwise refuses the re-send too"
+
+    - id: W10.7
+      scenario: readwise.io cannot be reached, then can
+      expect: Pending kept; the next sync's push sends it without any change on the tablet
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > stops at the first error and keeps everything that has not landed pending for the next sync"
+
+    - id: W10.8
+      scenario: The token is not accepted
+      expect: Stops at once
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > stops at once on rejected"
+
+    - id: W10.9
+      scenario: The plan has no API access
+      expect: Stops at once
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > stops at once on no-api"
+
+    - id: W10.10
+      scenario: A mark erased on the tablet, and a new one made
+      expect: The delete goes first, by its id, then the create
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > deletes > deletes an erased highlight by its id, before anything is created"
+
+    - id: W10.11
+      scenario: An erased highlight whose id was never learnt
+      expect: Found by its url in its book's listing, then deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > deletes > finds the id of a highlight it never learnt through its book's listing"
+
+    - id: W10.12
+      scenario: The book's listing does not have the erased highlight
+      expect: Already gone -- the record is dropped
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > deletes > drops a delete its book's listing does not find: it is already gone"
+
+    - id: W10.13
+      scenario: The book's listing fails
+      expect: The delete stays pending
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > deletes > keeps a delete pending when its book's listing fails"
+
+    - id: W10.14
+      scenario: An erased highlight in a book whose id was never learnt
+      expect: Dropped without a call; it stays in Readwise (accepted)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > deletes > drops a delete in a book whose id it never learnt"
+
+    - id: W10.15
+      scenario: The user deleted the book in Readwise
+      expect: Marked deleted, pending dropped, nothing sent -- now or ever (ticket 14 #2)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > a book deleted in Readwise (ticket 14 #2) > is marked deleted, its pending changes dropped, and never pushed again"
+
+    - id: W10.16
+      scenario: The book listing fails
+      expect: Nothing marked deleted and nothing sent (spec §11 P24)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > a book deleted in Readwise (ticket 14 #2) > is not looked for when the listing fails, and nothing is sent"
+
+    - id: W10.17
+      scenario: A new token of the same account
+      expect: State kept, new fingerprint stored
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > keeps the state for a new token of the same account"
+
+    - id: W10.18
+      scenario: A new token, and no book id to compare
+      expect: State kept and pushed
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > keeps the state when there is nothing to compare: no book id yet"
+
+    - id: W10.19
+      scenario: A token of another account
+      expect: State dropped, recording flag cleared for the backfill, old fingerprint kept as the one before
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > drops the state for another account, and leaves the backfill to the next sync"
+
+    - id: W10.20
+      scenario: A new token whose account check fails
+      expect: The old fingerprint stays, so the next push checks again
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > does not store a token whose account could not be checked"
+
+    - id: W10.21
+      scenario: Two computers with tokens of two accounts
+      expect: Clash detected on the switch back; both stop before any call, state kept
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > stops two computers on two accounts instead of backfilling each other"
+
+    - id: W10.40
+      scenario: Computer A comes back to its token before computer B, which dropped A's state, has pushed
+      expect: Clash, no call -- not a backfill each way, even with no book id to compare (spec §11 P4)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > stops a computer that comes back to the token just replaced before the other one pushed"
+
+    - id: W10.41
+      scenario: Book ids remembered, but no fingerprint ever stored
+      expect: State kept, no listing for the account check
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > keeps the state when no fingerprint was ever stored, whatever book ids it remembers"
+
+    - id: W10.22
+      scenario: A third token after a clash
+      expect: The clash cleared, the token checked as usual
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > lets a third token clear the clash and be checked like any other"
+
+    - id: W10.42
+      scenario: Stopped for two accounts, the user starts over (ticket 20, option C) with one token on both computers
+      expect: The backfilled document is pushed and the token stored; the other account, if still in use, drops the state once and is caught again when this computer comes back
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > pushes again after starting over with one token on both computers, and catches a second account again"
+
+    - id: W10.23
+      scenario: The user renamed the book and its author in Readwise
+      expect: Read from the listing, put back after the push reset them (spec §11 P25)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > puts back a title and author the user gave the book, after a push reset them"
+
+    - id: W10.24
+      scenario: Putting the names back fails
+      expect: No failure, still owed; the next push retries it with nothing else pending
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > keeps owing a rename that failed, and retries it on the next push with nothing else pending"
+
+    - id: W10.25
+      scenario: The user renamed the book back to ours
+      expect: Their names forgotten, no rename
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > forgets the user's names once they renamed the book back to ours"
+
+    - id: W10.26
+      scenario: The listing shows no author where ours is set
+      expect: Read as ours -- a blank cannot be put back
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > reads a blank author in the listing as ours: a blank cannot be put back"
+
+    - id: W10.47
+      scenario: The user added an author in Readwise to a book we sent without one
+      expect: Put back after the push resets it, and remembered (ticket 15, F3)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > puts back an author the user gave a book we sent without one"
+
+    - id: W10.43
+      scenario: The listing shows our author over 100 characters as readwise.io shortens it
+      expect: Read as ours -- no rename owed, none sent
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > does not take an author readwise.io shortened for one the user gave the book"
+
+    - id: W10.44
+      scenario: The user changed the book's category in Readwise, then a change is pushed
+      expect: The push resets it, the category is put back afterwards and remembered -- the user found it reset on 2026-11-02
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > puts back the category the user gave the book, after a push reset it"
+
+    - id: W10.45
+      scenario: The user set the category back to ours
+      expect: Forgotten; nothing put back
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > forgets the user's category once it is ours again"
+
+    - id: W10.46
+      scenario: A first push of a book whose author readwise.io shortens, then the mark is erased
+      expect: Book and highlight ids learnt, so the erased mark is deleted in Readwise -- in the Demo vault it stayed
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > learns the ids of a book with an author readwise.io shortens, so a mark erased later is deleted"
+
+    - id: W10.27
+      scenario: The token was not accepted
+      expect: The §6 notice naming the repair
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "readwiseNotice (spec §6) > says what rejected means"
+
+    - id: W10.28
+      scenario: The plan has no API access
+      expect: The §6 notice
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "readwiseNotice (spec §6) > says what no-api means"
+
+    - id: W10.29
+      scenario: Two computers on two accounts
+      expect: The §6 notice
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "readwiseNotice (spec §6) > says what clash means"
+
+    - id: W10.30
+      scenario: readwise.io did not answer
+      expect: '"N document(s) not pushed — will retry next sync."'
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "readwiseNotice (spec §6) > counts the documents unreachable left waiting"
+
+    - id: W10.31
+      scenario: A 400 without a per-item list
+      expect: Same notice as no answer
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "readwiseNotice (spec §6) > counts the documents bad-request left waiting"
+
+    - id: W10.32
+      scenario: A failure leaves nothing waiting, or nothing failed
+      expect: No notice
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "readwiseNotice (spec §6) > says nothing when nothing is left waiting or nothing failed"
+
+    - id: W10.33
+      scenario: The state remembers which account its token belongs to
+      expect: 12 hex of SHA-256, never the token
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "tokenFingerprint (spec §11 P4) > is the first 12 hex of the token's SHA-256"
+
+    - id: W10.34
+      scenario: An article with no author
+      expect: '`author` omitted from every item, never blank; the book''s category sent with each; its book id still learnt'
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > omits the author of a book nobody named, sends the book's category, and still learns the book's id"
+
+    - id: W10.35
+      scenario: A create lands but the answer names no book or id we can match
+      expect: Pushed all the same; a known id kept, no book id invented (spec §11 P5)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > records what landed when the answer names no book or id it can match"
+
+    - id: W10.36
+      scenario: Readwise refuses every item of a call
+      expect: All set aside, nothing re-sent
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > sends nothing more when Readwise refuses every item"
+
+    - id: W10.37
+      scenario: The client throws something that is not readwise.io's answer
+      expect: Thrown on, not reported as a stopped push
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > lets an error that is not readwise.io's through"
+
+    - id: W10.38
+      scenario: The user changed only the author in Readwise
+      expect: Only `author_override` put back
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > puts back an author alone, leaving our title"
+
+    - id: W10.39
+      scenario: A rename throws something that is not readwise.io's answer
+      expect: Thrown on -- only Readwise's failures are swallowed there
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > lets an error that is not readwise.io's through a rename"
+
+- feature: W11
+  name: Record and push in the plugin's run
+  code: src/main.ts
+  tier: pro
+  scenarios:
+    - id: W11.1
+      scenario: A sync with Pro, the switch on and a token in the Keychain
+      expect: The run gets a recorder; afterwards the push sends what is pending with that token
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > records during the run and pushes after it, with the token from this computer's Keychain"
+
+    - id: W11.11
+      scenario: The run's recorder records a unit
+      expect: Into the plugin's `readwiseBooks`, which the run's checkpoint saves
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > records into the vault's data, where the run's checkpoint saves it"
+
+    - id: W11.2
+      scenario: A free vault with the switch on
+      expect: No recorder, no client, nothing sent
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > records nothing and pushes nothing without Pro"
+
+    - id: W11.3
+      scenario: A computer without a token
+      expect: Records, does not push (spec §11 P2)
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > records on a computer without a token, and pushes nothing from it"
+
+    - id: W11.4
+      scenario: The reMarkable cloud cannot be reached
+      expect: The push runs all the same (spec §11 P22)
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > pushes when the source cannot be opened"
+
+    - id: W11.5
+      scenario: The user stops the run
+      expect: No push; what is recorded waits (spec §11 P16)
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > does not push on a run the user stopped"
+
+    - id: W11.6
+      scenario: Recording starts, then the source fails
+      expect: Flag and invalidation saved at the start, so the backfill still happens later (spec §5)
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > makes every note due once when recording starts, even when the source then fails"
+
+    - id: W11.7
+      scenario: The token is rejected on Sync now
+      expect: The §6 notice
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > says why a push stopped on a sync the user started"
+
+    - id: W11.8
+      scenario: The push throws a bug
+      expect: Logged, the sync's report unharmed, the state still pending
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > keeps a push that throws out of the sync's report"
+
+    - id: W11.9
+      scenario: A background sync finds the tablet asleep
+      expect: The push runs alone under the run lock, with no notice
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the push when a background sync finds the tablet asleep (spec §11 P22) > pushes alone and quietly, holding the run lock while it does"
+
+    - id: W11.10
+      scenario: A run takes the lock while the tablet is being asked about
+      expect: No second push -- the run has its own
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the push when a background sync finds the tablet asleep (spec §11 P22) > does not push while a run holds the lock"
+
+- feature: W13
+  name: Open in Readwise and Push to Readwise again (spec §7)
+  code: src/readwise-links.ts
+  tier: free
+  scenarios:
+    - id: W13.17
+      scenario: Open in Readwise on a note whose document's book has an id
+      expect: https://readwise.io/bookreview/<bookId>
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "readwiseBookUrl > is the review page of the note's book in Readwise"
+
+    - id: W13.18
+      scenario: Open in Readwise on a note the plugin never synced
+      expect: Unavailable
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "readwiseBookUrl > is none for a note the plugin never synced"
+
+    - id: W13.19
+      scenario: Open in Readwise on a note whose document was never pushed
+      expect: Unavailable
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "readwiseBookUrl > is none for a document never pushed"
+
+    - id: W13.20
+      scenario: Open in Readwise before the book's id is known
+      expect: Unavailable
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "readwiseBookUrl > is none for a book whose id is not known yet"
+
+    - id: W13.21
+      scenario: Open in Readwise on a book deleted in Readwise
+      expect: Unavailable
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "readwiseBookUrl > is none for a book deleted in Readwise"
+
+    - id: W13.24
+      scenario: The plugin's Open in Readwise command, with no note open, on a note whose book has no id yet, then once the id is known
+      expect: Unavailable, unavailable, then available; running it opens the book's review page
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the link back from Readwise and Open in Readwise (spec §7) > opens the note's book in Readwise once its id is known, and is unavailable before"
+
+- feature: W14
+  name: Push to Readwise again, the way back from a book deleted in Readwise (ticket 22)
+  code: src/readwise-links.ts, src/readwise-push.ts, src/main.ts
+  tier: pro
+  scenarios:
+    - id: W14.1
+      scenario: The command looks up a note whose document's book was deleted in Readwise
+      expect: That document
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is the note's document when its book was deleted in Readwise"
+
+    - id: W14.2
+      scenario: The command looks up a note the plugin never synced
+      expect: None, so the command is unavailable
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a note the plugin never synced"
+
+    - id: W14.3
+      scenario: The command looks up a note whose document was never pushed
+      expect: None
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a document never pushed"
+
+    - id: W14.4
+      scenario: The command looks up a note whose book is still in Readwise
+      expect: None
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a book still in Readwise"
+
+    - id: W14.5
+      scenario: The command looks up a note whose stored book this build cannot read
+      expect: None; the book stays untouched (spec §3)
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a book this build cannot read"
+
+    - id: W14.6
+      scenario: A book deleted in Readwise, then Push to Readwise again, the next sync's record, the push
+      expect: Only that document's book forgotten and its rows made due; the record starts a new book; the push sends it and nothing marks it deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > a book deleted in Readwise (ticket 14 #2) > comes back as a new book after *Push to Readwise again*, and the next sync records only that document anew"
+
+    - id: W14.7
+      scenario: The plugin's Push to Readwise again on a note whose book was deleted
+      expect: Available; running it drops the book, makes the note due, saves data.json, then starts a sync with a recorder
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "Push to Readwise again (ticket 22) > forgets the deleted book and makes the note due, saved before the sync it starts"
+
+    - id: W14.8
+      scenario: The command in a free vault, and on a book still in Readwise
+      expect: Unavailable both times
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "Push to Readwise again (ticket 22) > is unavailable for a book still in Readwise, and while recording is off"
+
+    - id: W14.9
+      scenario: The command run while a sync holds the run lock
+      expect: A notice to wait; the state is unchanged
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "Push to Readwise again (ticket 22) > waits for a sync in flight, which would write its own state over the change"
+
+    - id: W14.10
+      scenario: A book deleted in Readwise, a sync with nothing to send
+      expect: The listing is read and the book marked deleted, so *Push to Readwise again* is offered after that sync
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > notices a book deleted in Readwise with nothing to send"
+
+    - id: W14.11
+      scenario: A sync with nothing to send and no book with an id
+      expect: Nothing is asked of readwise.io
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > asks nothing when no book has an id to look for"
+
+    - id: W14.12
+      scenario: The listing fails on a sync with nothing to send
+      expect: The failure is reported and no book is marked deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > says so when the listing fails with nothing to send, and marks nothing deleted"
+
+    - id: W14.13
+      scenario: A token stored for the first time, on a sync with nothing to send
+      expect: No listing and no book marked deleted, because its account has not been compared; a listing of another account would read as every book deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > does not take another account's listing for every book deleted, when a token is just stored with nothing to send"
+
+# Ticket 27: on a phone the plugin does not run, so the link is one Obsidian answers by itself. W15.5 and
+# W15.9 are the load-bearing rows: a link that changes after the first record makes Readwise file a second
+# highlight, and nothing in Obsidian would show it.
+- feature: W15
+  name: The link back from Readwise (ticket 27)
+  code: src/readwise-highlights.ts
+  tier: pro
+  scenarios:
+    - id: W15.1
+      scenario: A highlight on the third page of the render, printed as page 12
+      expect: The link opens page 3 of the render; Readwise still shows page 12
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > opens the page of the render it sits on, which is not the page printed on it"
+
+    - id: W15.2
+      scenario: A highlight of a page-tag unit
+      expect: The link opens that unit's own render at its one page
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > opens a page-tag unit's own render, whose one page is page 1"
+
+    - id: W15.3
+      scenario: A vault whose name holds spaces, an umlaut, `&`, `#` and `?`
+      expect: The link carries the name in one piece
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > carries a vault name of any characters in one piece"
+
+    - id: W15.4
+      scenario: Two highlights on one page
+      expect: Two different links, because Readwise files a highlight by its link
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > differs for two highlights on one page"
+
+    - id: W15.5
+      scenario: A page added in front moves a highlight that already has its link
+      expect: The new page number is pushed; the link stays what it was, a page early
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > is frozen at the first record: the page moving changes the text, never the link"
+
+    - id: W15.6
+      scenario: A pushed highlight changes on the tablet and changes back
+      expect: The link stays through both
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > stays through a push and a change after it"
+
+    - id: W15.7
+      scenario: The push asks a record for its link
+      expect: The one stored on the record
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > is what Readwise knows the record by"
+
+    - id: W15.8
+      scenario: A stored link that is not a string
+      expect: Read as no link
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > is left out when what is stored is not one"
+
+    - id: W15.9
+      scenario: A record 1.11.0-beta.1 pushed, which stored no link, changes on the tablet
+      expect: It keeps the link it was pushed under, so Readwise updates it rather than filing it twice
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > stays the old one on a record that has none of its own, however it changes"
+
+    - id: W15.10
+      scenario: A new record of a unit whose render sits deep in the attachments folder
+      expect: The link names the vault and the render's file name, not its folder
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise recorder > links a new record to the page of the unit's render, by file name, in this vault"
+
+    - id: W15.11
+      scenario: A render at the top of the vault
+      expect: The file name as it is
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise recorder > takes the file name as it is when the render lies at the top of the vault"
+
+    - id: W15.12
+      scenario: A push of changed records, one with a frozen link, one from the beta
+      expect: Each updates the highlight Readwise holds under its link; no second highlight
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > sends a record's frozen link, and the old link for a record of the beta"
+
+    - id: W15.13
+      scenario: An erased highlight whose id was never learnt
+      expect: Found in the book's listing by its frozen link and deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > deletes > looks a highlight up by its frozen link"

@@ -100,11 +100,11 @@
   tier: free
   scenarios:
     - id: D17.10
-      scenario: The Handwritten notes switch is flipped on a vault that already has synced notes
-      expect: Every active row loses its render version, so the notes are rewritten -- nothing changed on the device, and without this the switch would take effect only for notebooks edited later
+      scenario: The Your notes on PDFs switch is flipped on a vault that has not recorded a value yet
+      expect: No row loses its render version at the switch; the old value is recorded, so the next sync sees the change and rewrites the notes (C28)
       layer: vault
       file: src/settings-tab.test.ts
-      test: "vault output > re-renders every synced note when the handwriting switch moves"
+      test: "vault output > records the old value when the handwriting switch moves, and rewrites no note yet"
 
 - feature: E1
   name: Backend dropdown
@@ -212,17 +212,17 @@
 
     - id: C15.16
       scenario: The master switch is turned on
-      expect: Saved, and the tab re-draws at once so the rows it unlocks are there to be set without reopening settings
+      expect: Saved, and the rows it unlocks are shown at once, without the page being drawn again
       layer: vault
       file: src/settings-tab.test.ts
-      test: "automatic sync > re-draws the moment it is switched on, so the rows it unlocks are there to be set"
+      test: "automatic sync > shows the rows it unlocks the moment it is switched on, without drawing the page again"
 
     - id: C15.17
-      scenario: The interval dropdown is drawn and launch-only is picked
-      expect: Five entries, and launch-only stores `null` rather than a number -- the two are different states, not a zero
+      scenario: The interval dropdown is drawn, launch-only is picked, then twelve hours
+      expect: Five entries with launch-only first, and launch-only stores `null` rather than a number -- the two are different states, not a zero; twelve hours stores 12
       layer: vault
       file: src/settings-tab.test.ts
-      test: "automatic sync > offers launch-only and four intervals, and stores launch-only as no interval at all"
+      test: "automatic sync > offers launch-only and four intervals, launch-only first, and stores it as no interval at all"
 
     - id: C15.18
       scenario: The interval is changed while Obsidian is running
@@ -343,11 +343,25 @@
       test: "the Tagged Sync Pro section > does not honour a signed trial whose date was moved by hand"
 
     - id: I2.5
-      scenario: A Pro licence is active, or was refunded, in a vault where no trial was ever started
-      expect: The trial button stands beside Deactivate and beside Buy -- the condition asks the trial's own history and nothing else. Characterised, not endorsed
+      scenario: A Pro licence is active, unconfirmed for a year, or was refunded, in a vault where no trial was ever started
+      expect: No trial button beside Deactivate while a licence runs, confirmed or not -- it would unlock what the licence already unlocks. A refunded buyer keeps the offer beside Buy
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Tagged Sync Pro section > offers the trial by the trial's own history, even to somebody who already has Pro"
+      test: "the Tagged Sync Pro section > offers the trial unless a licence is running, whatever the trial's own history"
+
+    - id: I2.19
+      scenario: Copy diagnostics is pressed with Zotero and Readwise set up
+      expect: The block has a Zotero and a Readwise line, and neither the API key nor the token
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > puts both integrations into the diagnostics, without a key or a token"
+
+    - id: I2.20
+      scenario: The row of somebody who never had Pro is drawn
+      expect: It names everything Pro brings -- cloud transcription, unlimited tag mappings, syncing without the cloud, frontmatter, Zotero write-back, Readwise -- because the Readwise page sends a free user here
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "licenceStatusText > names everything Pro brings to somebody who never had it"
 
 - feature: I3
   name: Paste and activate a key
@@ -402,7 +416,7 @@
       expect: The clipboard gets the block, carrying this build's version and the selected backend, and one notice says it happened -- nothing leaves the machine
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the actions at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+      test: "help at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
 
 - feature: H2
   name: Report a problem / request a feature
@@ -414,7 +428,14 @@
       expect: 'It states "Nothing is sent from here." beside the button that fills the clipboard'
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the actions at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+      test: "help at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+
+    - id: H2.2
+      scenario: The Help group is asked for its rows
+      expect: Report a problem (drawn, Copy diagnostics) and Request a feature (text, with the request and voting links), nothing else -- Sync now moved to the top
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "help at the bottom > holds the diagnostics button and the feature links, and nothing else"
 
 - feature: C2
   name: Sync from the settings screen
@@ -422,8 +443,388 @@
   tier: free
   scenarios:
     - id: C2.10
-      scenario: A paired vault opens the tab
-      expect: A Sync button under Actions -- syncing was reachable only from the command palette, and the plugin registers no ribbon icon
+      scenario: A connected vault opens the tab
+      expect: Sync now is the first row of reMarkable connection, a CTA button Sync -- syncing was reachable only from the command palette, and the plugin registers no ribbon icon
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the actions at the bottom > puts a Sync button on the settings screen, because the palette was the only way in"
+      test: "the reMarkable connection group > starts with Sync now once connected, then the sources and the cloud account"
+
+    - id: C2.16
+      scenario: Sync is pressed beside Sync now
+      expect: The plugin's sync starts, once
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > syncs from the button"
+
+- feature: W12
+  name: Readwise settings page
+  code: src/settings-tab.ts
+  tier: pro
+  scenarios:
+    - id: W12.1
+      scenario: A Pro vault opens the tab
+      expect: On the Readwise page, after Zotero under Integrations -- Connection, the switch, the Keychain token and the round-trip hint, each in Readwise spec §2's words
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > draws the rows of the spec, in its words"
+
+    - id: W12.2
+      scenario: A free vault with the switch on and a token in the Keychain
+      expect: The switch is shown shut with "(Pro)", the line says pushing is Pro, and readwise.io is not asked
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > shows a free vault the switch shut, and says pushing is Pro"
+
+    - id: W12.4
+      scenario: The switch is off
+      expect: '"Off.", and readwise.io is not asked'
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > reads Off. while the switch is off, without asking readwise.io"
+
+    - id: W12.5
+      scenario: The switch is on and this computer's Keychain has no entry for it
+      expect: The no-token line, as an error, and readwise.io is not asked
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > says so when this computer has no token, without asking readwise.io"
+
+    - id: W12.6
+      scenario: A token readwise.io accepts, with books pushed, a document waiting and a highlight set aside
+      expect: '"Checking…" until /auth/ answers, then "Connected — 1 book, 2 highlights pushed." with the waiting and refused counts, all from the state'
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > asks readwise.io and counts what the state says was pushed"
+
+    - id: W12.7
+      scenario: Nothing pushed yet, two highlights set aside
+      expect: '"0 books, 0 highlights" -- a set-aside item counts as neither -- and the plural refused sentence'
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > reads 0 books before the first push, and says what Readwise refused"
+
+    - id: W12.8
+      scenario: /auth/ answers 401
+      expect: The token line of Readwise spec §2.1, as an error, without the waiting count
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > reads a 401 as an error line, with no counts"
+
+    - id: W12.9
+      scenario: /auth/ answers 403
+      expect: The plan line, as an error (403 read as a plan without API access until spec §12 F5 is checked)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > reads a 403 as an error line, with no counts"
+
+    - id: W12.10
+      scenario: /auth/ answers 500
+      expect: '"Readwise didn''t answer.", as an error'
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > reads a 500 as an error line, with no counts"
+
+    - id: W12.11
+      scenario: A Keychain entry is picked
+      expect: data.json gets the entry's name, never the token, and the line asks readwise.io again
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > saves the Keychain entry's name, never the token, and asks again"
+
+    - id: W12.12
+      scenario: The tab opens with an entry chosen, and the choice is cleared
+      expect: The picker shows the entry; cleared, the name is null and the line says this computer has no token
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > shows the chosen entry, and forgets it when the choice is cleared"
+
+    - id: W12.13
+      scenario: The switch is turned on
+      expect: Saved once, and the line asks readwise.io; the backfill is the next sync's (W10)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > saves the switch and asks the line again"
+
+    - id: W12.14
+      scenario: An older probe answers after a newer one
+      expect: The newer answer stays on the line
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > never lets a slow answer land on top of a newer one"
+
+    - id: W12.15
+      scenario: Stopped for two accounts, this computer's token the state's account
+      expect: The two-accounts line, pointing at start over, and readwise.io is not asked
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > two computers on two accounts > says so for a token that is the readwiseAccount, without asking readwise.io"
+
+    - id: W12.16
+      scenario: Stopped for two accounts, this computer's token the one the state was dropped for
+      expect: The same line -- either token keeps the clash (ticket 19's open point)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > two computers on two accounts > says so for a token that is the readwiseAccountBefore, without asking readwise.io"
+
+    - id: W12.17
+      scenario: Stopped for two accounts, Start over is pressed
+      expect: State, fingerprints, clash and backfill flag go, saved once; the row is gone and the line asks readwise.io again
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > two computers on two accounts > starts over with this computer's token: the state goes, the next sync pushes everything"
+
+    - id: W12.19
+      scenario: Stopped for two accounts, on a computer without a token
+      expect: The no-token line, and no start-over row -- there is no token of this computer's to start over with
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > two computers on two accounts > offers no start-over on a computer without a token to start over with"
+
+    - id: W12.20
+      scenario: Start over is pressed while a sync runs
+      expect: A notice to wait; nothing forgotten, nothing saved -- the push would write its state back when it ends
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > two computers on two accounts > does not start over while a sync runs"
+
+    - id: W12.18
+      scenario: Nothing clashes
+      expect: No start-over row
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > two computers on two accounts > offers no start-over while nothing clashes"
+
+    - id: W12.21
+      scenario: The Readwise page's definitions are asked for, stopped for two accounts with a token on this computer
+      expect: 'One group without a heading, tagged-sync-group-readwise (settings-redesign spec §7): the Connection line a render row, the switch a toggle on readwise.push, the token a secret control on readwise.tokenSecret, the round-trip hint a text row, Start over a render row'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > answers one group without a heading on its page, each row bound to its key"
+
+    - id: W12.22
+      scenario: Settings search for "API key"
+      expect: The token row carries the alias (settings-redesign spec §8)
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > finds the token field by the word people search for"
+
+    - id: W12.23
+      tier: free
+      scenario: A free vault with the switch on and a token in the Keychain, and the root is drawn
+      expect: The Readwise entry reads "Pro", no marker, and the Keychain is not read
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > says Pro to a free vault, without reading the Keychain"
+
+    - id: W12.24
+      scenario: The switch is on and this computer's Keychain has no entry, and the root is drawn
+      expect: The Readwise entry reads "No access token" with the warning marker
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > warns for a switch on with no token on this computer"
+
+    - id: W12.25
+      scenario: The Connection line's probe is answered 401, then another Keychain entry is picked whose answer has not come
+      expect: The entry reads "Token not accepted" with the warning marker after the 401; the pick forgets the answer, so the entry reads "Pushing" before readwise.io has said anything about the new token -- also after the old token's late second 401
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > warns once readwise.io did not accept the token, and forgets it when another token is chosen"
+
+    - id: W12.29
+      scenario: The page is left for the root before the Connection line's probe is answered, then readwise.io answers 401
+      expect: The entry reads "Token not accepted" with the warning marker -- the answer is about the token still in the Keychain, though the line that asked is gone
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > warns on an answer that comes after the page was left"
+
+    - id: W12.26
+      scenario: The Readwise page's entry, for each state of settings-redesign spec §5
+      expect: 'First match wins: no Pro "Pro"; switch off "Off"; stopped for two accounts "Two accounts" with a warning; no token on this computer "No access token" with a warning; the last answer a refused token "Token not accepted" with a warning; otherwise "Pushing" -- an unreachable Readwise or a plan without API access is no reason to act on the token'
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise page's entry > reads each state as the spec's table says"
+
+    - id: W12.27
+      scenario: The entry is asked without Pro, or with the switch off
+      expect: The Keychain is not read
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise page's entry > reads the Keychain only with Pro and the switch on"
+
+    - id: W12.28
+      scenario: A sync's push is answered, accepted or refused
+      expect: The plugin keeps "ok" or the failure as the last answer, which the settings entry reads; before any answer it holds nothing
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > keeps what the push was answered, for the settings page's entry"
+
+    - id: W12.30
+      scenario: The Readwise line of Copy diagnostics, with a pushed book, a refused highlight and a document waiting
+      expect: The entry's state, the counts and readwise.io's last answer, in one line
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > says the state, the counts and readwise.io's last answer"
+
+    - id: W12.31
+      scenario: Nothing has asked readwise.io since Obsidian started
+      expect: '"last answer: none since Obsidian started", not a null'
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > says when nothing has asked readwise.io yet rather than printing null"
+
+    - id: W12.32
+      scenario: No token, the switch off, or no Pro
+      expect: The line starts with what stops the push
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > names what stops the push"
+
+    - id: W12.33
+      scenario: A token sits in the Keychain under its entry name
+      expect: Neither the token nor the entry's name is in the line, since the block goes into public issues
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > never carries the token or its Keychain entry"
+
+- feature: SR1
+  name: The settings tab on the declarative settings API (settings-redesign ticket 10)
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: SR1.1
+      scenario: The tab of a connected vault is asked for its definitions
+      expect: Eight groups in spec §3's order, each with its tagged-sync-group class; Integrations holds the Zotero and Readwise pages
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > answers with the root page's eight groups in order, Zotero and Readwise as pages"
+
+    - id: SR1.2
+      scenario: The tab of a vault with no source connected is asked for its definitions
+      expect: Tag routing is left out of the array, not hidden in it
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > leaves Tag routing out of the definitions until there is a device to sync with"
+
+    - id: SR1.3
+      scenario: One row throws while it is drawn (a backend whose own rows cannot be drawn)
+      expect: That row says it could not be drawn and the error is logged; the Backend row and every other group draw as before
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > draws a row that throws as one sentence, and every other row as before"
+
+    - id: SR1.9
+      scenario: A visible predicate throws when the drawn rows are re-evaluated
+      expect: The row is hidden and the error logged; the tab stays (spec §2.2)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > hides a row whose visible predicate throws, and says why in the console"
+
+    - id: SR1.4
+      scenario: Building the definitions throws (they also run inside onload)
+      expect: One row, "The settings could not be drawn.", and the error logged -- never a throw
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > answers one row instead of throwing when the definitions cannot be built"
+
+    - id: SR1.5
+      scenario: A control value is read and written by a dot path into data.json
+      expect: The nested object is replaced, not mutated -- the old one a sync may hold keeps its value -- and data.json is saved
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > reads and writes data.json by dot path, replacing the object a running sync may hold"
+
+    - id: SR1.6
+      scenario: A control writes the value that is already stored
+      expect: Nothing is saved
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > saves nothing for the value that is already stored"
+
+    - id: SR1.7
+      scenario: A text key is set and the tab closes before the debounce fires
+      expect: The value is current in memory at once and reaches data.json when the tab closes
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > holds a typed value back from data.json, and writes it when the tab closes"
+
+    - id: SR1.8
+      scenario: A control writes a key data.json does not have (a special form no ticket has built yet, or a typo)
+      expect: Refused with the key named; nothing written, nothing saved -- the file's shape stays
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > refuses a key that names nothing in data.json, and saves nothing"
+
+- feature: SR2
+  name: The root groups as definitions (settings-redesign ticket 11)
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: SR2.1
+      scenario: A connected free vault is asked for reMarkable connection's rows
+      expect: Sync now, Sync from, If that is not reachable, reMarkable cloud account -- all drawn by the plugin, in that order
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > starts with Sync now once connected, then the sources and the cloud account"
+
+    - id: SR2.2
+      scenario: A vault with nothing connected, then one whose source is the device
+      expect: No Sync now and a Connect row for the one-time code; Connect device comes in before the cloud account only for the device source
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > asks for the one-time code while nothing is connected, and offers pairing only for a device source"
+
+    - id: SR2.3
+      scenario: Sync from's definition is read for settings search
+      expect: Its aliases are source, SSH, USB, Wi-Fi and cloud (spec §8)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > finds Sync from by the words people search for"
+
+    - id: SR2.4
+      scenario: Vault output is asked for its rows
+      expect: Attachments folder is a folder control on attachmentsFolder (placeholder the default, no root, aliases PDF folder and render), Your notes on PDFs a toggle on marginNotes, Frontmatter drawn by the plugin (F5)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > binds the folder and the handwriting switch to data.json, and draws frontmatter itself"
+
+    - id: SR2.5
+      scenario: Transcription is asked for its rows, with a backend that has rows and with one that has none
+      expect: Backend (drawn, aliases OCR, handwriting, transcription model) and a host row Backend settings that search skips; with no backend rows, Backend alone
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > are hosted by one unsearchable row, there only while the selected backend has rows"
+
+    - id: SR2.6
+      scenario: A backend that draws a row of its own is selected
+      expect: The row is drawn inside the host's tagged-sync-backend-host element, with no name or control of the host beside it
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > draws them into the host row's own element, without the row's name or controls beside them"
+
+    - id: SR2.7
+      scenario: Another backend is picked while one with its own rows is selected
+      expect: One host, holding only the new backend's rows -- Obsidian keeps the host row across the redraw and draws into it again (found on the device)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > replaces the previous backend's rows when another backend is picked"
+
+    - id: SR2.8
+      scenario: The tab is redrawn, then closed, while a backend that returns a cleanup is selected
+      expect: The backend's cleanup runs each time, so a download tick no longer redraws a card nobody sees
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > tears the backend's rows down with the host row: on a redraw and when the tab closes"
+
+    - id: SR2.9
+      scenario: Automatic sync is asked for its rows, off with a metered backend and on with a consent backend
+      expect: Enable a toggle on autoSync.enabled; Sync interval a dropdown on autoSync.interval; the metered consent a toggle on autoSync.autoTranscribeMetered, the backend's consent drawn by the plugin; the rows after the switch shown only while it is on
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > keeps its rows as controls bound to data.json, the ones after the switch shown only while it is on"
+
+    - id: SR2.10
+      scenario: Tagged Sync Pro is asked for its rows, free and then with an active licence
+      expect: Free -- the status row and Licence key, whose description is the paste sentence plus the money-back promise (alias license), no loose note; Pro -- the status row alone
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > draws the status row and, until Pro is active, the key row with the money-back promise"

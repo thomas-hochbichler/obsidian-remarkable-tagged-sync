@@ -83,11 +83,31 @@ export interface Transport {
 }
 
 /**
+ * The primary was not there, and the fallback failed too. Carries both: whoever catches this was only
+ * ever told about the primary, and would word the fallback's failure as the primary's.
+ */
+export class BothSourcesFailedError extends Error {
+	constructor(
+		readonly primary: Transport,
+		primaryError: unknown,
+		readonly fallback: Transport,
+		readonly fallbackError: unknown,
+	) {
+		const raw = (error: unknown) => (error instanceof Error ? error.message : String(error));
+		super(`${primary.label}: ${raw(primaryError)}; ${fallback.label}: ${raw(fallbackError)}`);
+		this.name = "BothSourcesFailedError";
+	}
+}
+
+/**
  * The transport's own wording, or the neutral one. Two layers rather than one because most failures
  * -- a vault name conflict, a truncated page -- mean the same thing whichever source the bytes came
  * from, and only a transport can word the ones that do not.
  */
 export function explainTransportError(transport: Transport, error: unknown, context: ErrorContext): string {
+	if (error instanceof BothSourcesFailedError) {
+		return `Could not reach ${error.primary.label}. ${explainTransportError(error.fallback, error.fallbackError, context)}`;
+	}
 	// The neutral layer is told which source it is talking about, so its last-resort sentence names the
 	// tablet when the tablet is what answered strangely.
 	return transport.explainError(error, context) ?? explainError(error, context, transport.label);

@@ -5,10 +5,20 @@
  */
 export type ErrorContext = "connect" | "sync";
 
+/**
+ * Chromium's words for "nothing answered there", which is what `requestUrl` throws inside Obsidian.
+ * One list for the cloud and the local servers (`isUnreachable`): as two, the cloud's lacked all but one
+ * of them, and a Wi-Fi with no internet read as reMarkable having changed their service.
+ *
+ * Certificate errors stay out on purpose: something did answer, and a better connection does not cure it.
+ */
+export const CHROMIUM_UNREACHABLE =
+	"err_connection_(refused|reset|closed|aborted|failed|timed_out)|err_name_(not_resolved|resolution_failed)|err_dns_|err_timed_out|err_address_unreachable|err_internet_disconnected|err_(proxy|tunnel)_connection_failed";
+
 // Matched against the error text because the plugin talks to the reMarkable cloud through rmapi-js
 // and Electron's fetch, neither of which exposes a stable typed error. Deliberately loose: an
 // unrecognised error still gets the honest "unexpected answer" message below.
-const OFFLINE_RE = /network|failed to fetch|fetch failed|enotfound|econnrefused|eai_again|getaddrinfo|err_internet_disconnected|offline/i;
+const OFFLINE_RE = new RegExp(`network|failed to fetch|fetch failed|enotfound|econnrefused|eai_again|getaddrinfo|offline|${CHROMIUM_UNREACHABLE}`, "i");
 const REJECTED_RE = /\b401\b|\b403\b|unauthorized|unauthorised|forbidden|invalid[ _-]?token|token[ _-]?expired/i;
 // Obsidian's own vault refusals: "File already exists.", "Folder already exists.", and the
 // forbidden-character sentence. Without this, a local name conflict falls through to the

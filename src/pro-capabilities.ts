@@ -3,6 +3,7 @@ import type { Entitlement } from "./licence-state";
 import { isGated } from "./ocr-resolution";
 import { ocrBackendEntries } from "./ocr-registry";
 import { allowedTransports } from "./ssh-transport";
+import { readwiseProAllowed, readwiseRecorderFor } from "./readwise-push";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
 import { createZoteroClientFor, DEFAULT_ZOTERO_SETTINGS, zoteroProAllowed } from "./zotero-settings";
 
@@ -127,18 +128,18 @@ const TAG_MAPPING_CAPABILITY: ProCapability = {
 	enforcedAt: {
 		site: "src/tag-routing-view.ts planTagRouting",
 		/**
-		 * Driven, not grepped: one tag already mapped and a second discovered is exactly the state the
-		 * cap exists for, so the plan's own items say whether it closed -- and `capped` is what makes
-		 * the refusal visible in place rather than silent.
+		 * Driven, not grepped: one tag already mapped and a second found is exactly the state the cap
+		 * exists for, so the plan's own pills say whether it closed -- and `capped` is what makes the
+		 * refusal visible in place rather than silent.
 		 */
 		run: (entitlement) => {
 			const view = planTagRouting({
-				mapping: { "#first": "Inbox" },
-				discoveredTags: ["#first", "#second"],
+				mapping: { first: "Inbox" },
+				foundTags: ["first", "second"],
 				folderPaths: ["/", "Inbox", "Archive"],
 				entitlement,
 			});
-			return view.items.some((item) => item.kind === "capped") ? "refused-in-place" : "allowed";
+			return view.pills.some((pill) => pill.capped) ? "refused-in-place" : "allowed";
 		},
 	},
 };
@@ -216,6 +217,28 @@ const ZOTERO_CAPABILITY: ProCapability = {
 };
 
 /**
+ * Pushing to Readwise (Readwise spec §2, ticket 06 #4): the whole feature, record and push alike.
+ *
+ * `run` drives the production factory: with the switch on, a vault either gets a recorder for its
+ * sync or gets none -- and the push asks the same `readwiseRecordingOn`, so without a recorder nothing
+ * is recorded and nothing is sent.
+ */
+const READWISE_CAPABILITY: ProCapability = {
+	id: "readwise-push",
+	label: "Push your highlights and margin notes into your Readwise library",
+	locked: (entitlement) => !readwiseProAllowed(entitlement),
+	// The toggle is shown, disabled, with "(Pro)", and the Connection line says why.
+	whenLocked: "refused-in-place",
+	enforcedAt: {
+		site: "src/readwise-push.ts readwiseRecorderFor and readwiseRecordingOn, called from src/main.ts runSyncNow and pushReadwise",
+		run: (entitlement) =>
+			readwiseRecorderFor({ push: true, tokenSecret: "readwise" }, entitlement, { books: () => ({}), setBooks: () => {}, vaultName: () => "" }) === undefined
+				? "refused-in-place"
+				: "allowed",
+	},
+};
+
+/**
  * Every gated capability this build ships.
  *
  * The `filter` is the single most important line here. The obvious form --
@@ -226,7 +249,7 @@ export function proCapabilities(): ProCapability[] {
 	const backends = ocrBackendEntries()
 		.filter((entry) => BACKEND_TIER[entry.id]?.paid)
 		.map(backendCapability);
-	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY, ZOTERO_CAPABILITY];
+	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY, ZOTERO_CAPABILITY, READWISE_CAPABILITY];
 }
 
 /**
@@ -265,6 +288,10 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	"src/zotero-settings.ts": {
 		reads: 1,
 		why: "`zoteroProAllowed`, the gate of Zotero's Pro half. A gate, and it is in the list -- `createZoteroClientFor` in the same file asks it for the desktop connection, `zoteroPassFor` for write-back.",
+	},
+	"src/readwise-push.ts": {
+		reads: 1,
+		why: "`readwiseProAllowed`, the Readwise push gate. A gate, and it is in the list -- `readwiseRecordingOn` in the same file asks it for both the record and the push.",
 	},
 	"src/settings-tab.ts": {
 		reads: 4,

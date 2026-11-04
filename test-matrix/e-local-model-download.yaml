@@ -665,6 +665,146 @@
       file: src/local-register.test.ts
       test: "a model an earlier release left behind > removes an unfinishable partial without asking"
 
+    - id: E39.13
+      scenario: The settings tab tears a card down while a newer card is on screen, then tears the newer one down too
+      expect: The old card's cleanup leaves the newer card redrawing; once the newer one is torn down, a redraw it asks for draws nothing (settings-redesign spec §3.4)
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a card the settings tab tore down > draws nothing more, while a newer card keeps redrawing"
+
+    - id: E39.14
+      scenario: A first download is running
+      expect: The heading names the model, and a *Model files* row beside Pause gives the directory it lands in (Demo-vault smoke test 2026-11-04)
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > names the model and the directory it lands in"
+
+    - id: E39.15
+      scenario: The offered newer model is downloading while the older one stays in use
+      expect: Heading and directory are the newer model's, though the choice rule still answers with the working one
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > names the model being fetched, not the one still in use"
+
+    - id: E39.16
+      scenario: A download is paused
+      expect: The *Model files* row still gives the directory, beside Resume and Discard
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > still says where the files are once it is paused"
+
+    - id: E39.17
+      scenario: The downloading, verifying and paused cards are drawn for a model
+      expect: Each names it, by the model's own label
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "the states that carry a decided sentence > names the model while it downloads, while it is checked, and once it is paused"
+
+    - id: E39.18
+      scenario: A newer model downloads while a complete one stays in use
+      expect: The card says the working model keeps transcribing, not that notes arrive without a transcript
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > says the working model keeps transcribing while a newer one arrives"
+
+    - id: E39.19
+      scenario: A first download, with no model yet
+      expect: The card still says notes arrive without a transcript until it is done
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > says notes arrive without a transcript while there is no model yet"
+
+    - id: E39.20
+      scenario: A newer model's download was interrupted, and Resume is pressed
+      expect: The newer model's download resumes, not one for the model in use
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > resumes the newer model, not the one in use"
+
+    - id: E39.21
+      scenario: A newer model's download failed verification, and Delete and start over is pressed
+      expect: Only its directory goes. The working model, the engine it needs, its pick and the selected backend stay
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > deletes only what it fetched, and leaves the working model, its engine and the backend alone"
+
+    - id: E39.27
+      scenario: A newer model's download was paused by the reader
+      expect: The card goes back to what is on disk, the working model and its directory
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > draws what is on disk once the download was paused by the reader"
+
+    - id: E39.28
+      scenario: A newer model's download was refused because another run was busy
+      expect: The same
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > draws what is on disk once the download was refused because another run was busy"
+
+    - id: E39.29
+      scenario: A newer model's download finished, seen before the rule picked it
+      expect: The same
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > draws what is on disk once the download was finished"
+
+    - id: E39.30
+      scenario: Two complete models, the less accurate one picked
+      expect: No button and no sentence offers to download the one already on disk; the dropdown is the way back
+      layer: vault
+      file: src/local-register.test.ts
+      test: "two complete models, the smaller one picked > offers no download of the model already on disk"
+
+    - id: E39.31
+      scenario: Delete the model on the picked one, with another complete model on disk
+      expect: Only its directory goes and the pick is forgotten; the engine and the backend selection stay for the other model
+      layer: vault
+      file: src/local-register.test.ts
+      test: "two complete models, the smaller one picked > deletes only the one on the card, and goes back to the other"
+
+    - id: E39.32
+      scenario: Delete the model with another complete model this computer has too little memory for
+      expect: The whole setup goes and the backend moves on, because that model would transcribe nothing
+      layer: vault
+      file: src/local-register.test.ts
+      test: "two complete models, the smaller one picked > deletes the whole setup when the other model cannot run on this computer"
+
+    - id: E39.22
+      scenario: The window of page times was measured on another model
+      expect: The card shows the derived figure, not the other model's as this machine's, and the window stays for going back to that model
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the speed figure, across a change of model > does not quote timings measured on another model, and keeps them"
+
+    - id: E39.23
+      scenario: The window was measured on this model
+      expect: The card quotes this machine's figure
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the speed figure, across a change of model > keeps timings measured on this model"
+
+    - id: E39.24
+      scenario: The window comes from a version that did not name a model
+      expect: It is not trusted, and the derived figure stands until ten pages are measured
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the speed figure, across a change of model > does not trust timings from before they named a model"
+
+    - id: E39.25
+      scenario: The backend reads a page under a window of another model
+      expect: The window starts over, even if no card was ever drawn for this model
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "timing > starts a new window on a model the window was not measured on"
+
+    - id: E39.26
+      scenario: This machine's figure is one second
+      expect: The Speed line says "1 second", not "1 seconds"
+      layer: unit
+      file: src/local-model-settings.test.ts
+      test: "estimateLine > says one second, not one seconds"
+
 
 - feature: E41
   name: What the dropdown says on a machine the model is not offered on

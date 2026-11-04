@@ -4,8 +4,8 @@ import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
 import { askWhichAttachment, askWhichPdf, askZoteroItem, EVIDENCE, ITEM_HAS_NO_PDF, NOTHING_FOUND } from "./zotero-link-dialog";
 import type { ZoteroQuestion } from "./zotero-sync";
 
-const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
-const OTHER: ZoteroItem = { key: "ITEM2", library: "user", title: "Etwas anderes", creator: null, year: null, citationKey: null };
+const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }], year: "2024", citationKey: null };
+const OTHER: ZoteroItem = { key: "ITEM2", library: "user", title: "Etwas anderes", creator: null, creators: [], year: null, citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
 	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ours: false, ...overrides };

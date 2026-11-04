@@ -83,13 +83,18 @@ export interface ZoteroAttachment {
 	readonly ours: boolean;
 }
 
-/** A bibliographic item, in the four fields the note and the picker need (spec §4). */
+/** One creator as Zotero keeps it: a person in two fields, or an institution in one. `creatorType` is `author`, `editor`, … */
+export type ZoteroCreator = { readonly creatorType: string } & ({ readonly firstName: string; readonly lastName: string } | { readonly name: string });
+
+/** A bibliographic item, in the fields the note, the picker and the Readwise book need (spec §4). */
 export interface ZoteroItem {
 	readonly key: string;
 	readonly library: ZoteroLibrary;
 	readonly title: string;
 	/** First creator's family name, for `Smith 2024 · Title`. */
 	readonly creator: string | null;
+	/** Every creator, in Zotero's order: the Readwise book's author (Readwise spec §11 P7). */
+	readonly creators: readonly ZoteroCreator[];
 	readonly year: string | null;
 	/** Only when Zotero has one. Never invented, and never written back (spec §4). */
 	readonly citationKey: string | null;
@@ -575,6 +580,16 @@ function citationKeyOf(data: Json): string | null {
 	return extra === null ? null : (/^Citation Key:\s*(\S+)$/m.exec(extra)?.[1] ?? null);
 }
 
+/** A creator row, or null for one with neither a person's nor an institution's name. */
+function toCreator(row: Json): ZoteroCreator | null {
+	const creatorType = asString(row.creatorType) ?? "";
+	const firstName = asString(row.firstName);
+	const lastName = asString(row.lastName);
+	if (firstName !== null || lastName !== null) return { creatorType, firstName: firstName ?? "", lastName: lastName ?? "" };
+	const name = asString(row.name);
+	return name === null ? null : { creatorType, name };
+}
+
 function toItem(data: Json, library: ZoteroLibrary): ZoteroItem {
 	const creators = Array.isArray(data.creators) ? data.creators.map(asRecord) : [];
 	const first = creators[0];
@@ -585,6 +600,7 @@ function toItem(data: Json, library: ZoteroLibrary): ZoteroItem {
 		library,
 		title: typeof data.title === "string" ? data.title : "",
 		creator,
+		creators: creators.map(toCreator).filter((row): row is ZoteroCreator => row !== null),
 		// Zotero's `date` is free text ("2024-06", "June 2024", "in press"), so the year is taken as
 		// the first four-digit run and nothing is inferred where there is none.
 		year: /\b(\d{4})\b/.exec(asString(data.date) ?? "")?.[1] ?? null,

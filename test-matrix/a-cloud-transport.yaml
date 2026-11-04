@@ -307,6 +307,20 @@
       file: src/transport.test.ts
       test: "CloudTransport > fails over on an offline error but never on a refused credential"
 
+    - id: A9.7
+      scenario: The cloud's name does not resolve (net::ERR_NAME_NOT_RESOLVED), with the tablet set as the fallback
+      expect: The chain opens the fallback and says which way it went. Chromium's words are what `requestUrl` throws, and the cloud's check knew only one of them
+      layer: unit
+      file: src/transport.test.ts
+      test: "CloudTransport > hands over to the fallback when Chromium says the cloud's name did not resolve"
+
+    - id: A9.8
+      scenario: The cloud is not there and the tablet set as the fallback fails too
+      expect: '"Could not reach" the primary, then the fallback''s own sentence. Not the sentence about reMarkable changing their service'
+      layer: unit
+      file: src/transport.test.ts
+      test: "explainTransportError > says the primary was not there and lets the fallback word its own failure"
+
     - id: A9.4
       scenario: A cloud session is opened and closed
       expect: '`close` resolves. It is a no-op here -- rmapi-js holds no socket -- and it exists so both transports have one shape of call site rather than two'

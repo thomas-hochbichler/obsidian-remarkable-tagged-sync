@@ -15,7 +15,7 @@
  * plugin is not an advertisement.
  */
 
-import { type App, type Command, type EventRef, Menu, Notice, TFile } from "obsidian";
+import { type App, type Command, type EventRef, type Menu, Notice, TFile } from "obsidian";
 import { confirmDialog } from "./confirm-modal";
 import { pickPdfFile, readLocalFile } from "./desktop-files";
 import type { Entitlement } from "./licence-state";

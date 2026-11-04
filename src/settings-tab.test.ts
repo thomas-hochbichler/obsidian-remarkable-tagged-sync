@@ -7,7 +7,10 @@ import {
 	FakeApp,
 	type FakeEl,
 	Platform,
-	type Setting,
+	type PluginSettingTab,
+	renderSettingTab,
+	type SecretComponent,
+	Setting,
 	takeNotices,
 	takeSettings,
 	type TextComponent,
@@ -18,6 +21,7 @@ import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { explainError } from "./explain-error";
 import {
 	ACTIVATION_LIMIT_MESSAGE,
+	MONEY_BACK_MESSAGE,
 	OFFLINE_ACTIVATION_MESSAGE,
 	WITHDRAWN_KEY_MESSAGE,
 	WRONG_KEY_MESSAGE,
@@ -28,6 +32,7 @@ import { DeviceUnreachableError } from "./ssh-connection";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import { PairingRefusedError } from "./ssh-pairing";
 import { BACKGROUND_CONSENT_NAME, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
+import { tokenFingerprint } from "./readwise-push";
 
 // Gap G28 -- the settings tab. `main.ts` and `local-register.ts` are the only files that construct a
 // `Setting`, and neither had a test file: every string, state and rule *below* the tab is verified
@@ -148,6 +153,24 @@ registerOcrBackend(
 );
 /** Declares the need and forgets the accessors -- the half-declared pair, from the tab's side. */
 registerOcrBackend(testBackend("test-half-consent", { needsBackgroundConsent: true }));
+/** Its rows cannot be drawn. */
+registerOcrBackend(
+	testBackend("test-throws", {
+		renderSettings: () => {
+			throw new Error("broken rows");
+		},
+	}),
+);
+/** Draws a row and keeps something running until its rows are torn down, like the local model's download ticks. */
+const tornDown: string[] = [];
+registerOcrBackend(
+	testBackend("test-cleanup", {
+		renderSettings: (containerEl) => {
+			new Setting(containerEl as unknown as FakeEl).setName("Backend's own row");
+			return () => void tornDown.push("test-cleanup");
+		},
+	}),
+);
 
 /**
  * A key pair for the trial ticket (`trial-ticket.ts`). The plugin gets its public half; "signed by
@@ -166,9 +189,9 @@ async function ticketFor(vault: string, startedAt: string): Promise<TrialTicket>
 
 // --- harness ------------------------------------------------------------------------------------
 
-interface Tab {
-	containerEl: FakeEl;
-	display(): void;
+interface Tab extends PluginSettingTab {
+	getControlValue(key: string): unknown;
+	setControlValue(key: string, value: unknown): Promise<void>;
 }
 
 interface Plugin {
@@ -205,29 +228,37 @@ async function tabWith(
 
 /** One thing the tab drew, in draw order -- a `Setting` row, a heading, or a bare note div. */
 type Drawn =
-	| { kind: "heading"; name: string }
+	| { kind: "heading"; name: string; desc: string }
 	| { kind: "row"; name: string; desc: string; setting: Setting }
 	| { kind: "note"; cls: string; text: string };
 
-/** Everything on the screen, in the order it was drawn. Order is a decision this plugin makes. */
+/**
+ * Everything on the screen, in the order it was drawn. Order is a decision this plugin makes. Each
+ * page is read right under its entry, as the one long tab this file was written against.
+ */
 function draw(tab: Tab): Drawn[] {
 	takeSettings();
-	tab.display();
+	renderSettingTab(tab, { openPages: true });
 	return onScreen(tab);
 }
 
 /**
  * What the screen holds now, without drawing it again -- so a control that changed the page and lost
- * its re-render reads as the stale page it left behind.
+ * its re-render reads as the stale page it left behind. An element that holds rows at any depth (the
+ * backend's host row) is read as the rows it holds.
  */
 function onScreen(tab: Tab): Drawn[] {
 	const bySettingEl = new Map(takeSettings().map((setting: Setting) => [setting.settingEl, setting]));
-	return tab.containerEl.children.map((child): Drawn => {
-		const setting = bySettingEl.get(child);
-		if (!setting) return { kind: "note", cls: [...child.classes].join(" "), text: child.allText().join(" ") };
-		if (setting.heading) return { kind: "heading", name: setting.name };
-		return { kind: "row", name: setting.name, desc: setting.desc, setting };
-	});
+	const holdsRows = (el: FakeEl): boolean => el.children.some((inner) => bySettingEl.has(inner) || holdsRows(inner));
+	const read = (el: FakeEl): Drawn[] =>
+		el.children.flatMap((child): Drawn[] => {
+			const setting = bySettingEl.get(child);
+			if (holdsRows(child)) return read(child);
+			if (!setting) return [{ kind: "note", cls: [...child.classes].join(" "), text: child.allText().join(" ") }];
+			if (setting.heading) return [{ kind: "heading", name: setting.name, desc: setting.desc }];
+			return [{ kind: "row", name: setting.name, desc: setting.desc, setting }];
+		});
+	return read(tab.containerEl);
 }
 
 /** The rows and notes under one heading, up to the next one. */
@@ -252,8 +283,11 @@ function verdict(found: Extract<Drawn, { kind: "row" }>): FakeEl {
 	return line;
 }
 
+/** The rows a reader sees: a row hidden by its `visible` predicate is in the page and not on screen. */
 function rowNames(drawn: Drawn[]): string[] {
-	return drawn.filter((item) => item.kind === "row").map((item) => item.name);
+	return drawn
+		.filter((item): item is Extract<Drawn, { kind: "row" }> => item.kind === "row" && item.setting.settingEl.visible)
+		.map((item) => item.name);
 }
 
 function buttons(drawn: Drawn[], name: string): ButtonComponent[] {
@@ -300,24 +334,23 @@ describe("the shape of the settings screen", () => {
 		expect(draw(tab).filter((item) => item.kind === "heading").map((item) => item.name)).toEqual([
 			// First, because with two sources the question before every other one is which source this
 			// vault is reading from.
-			"Where your notes come from",
+			"reMarkable connection",
 			"Tag routing",
 			"Vault output",
 			"Transcription",
 			"Automatic sync",
-			// Between automatic sync and the Pro section: it is a Pro feature, set up once, and it reads
-			// as what it is where it sits next to the thing that unlocks it.
+			// Between automatic sync and the Pro section: set up once, each on its own page.
+			"Integrations",
+			// The page's title; its first group, the connection, has no heading (settings-redesign 05 #5).
 			"Zotero",
-			// One heading per connection, so a switch says whether anything goes over the internet, and
-			// one for the tablet rows that follow.
-			"Zotero cloud",
-			"Zotero local",
-			"Zotero libraries",
+			"Libraries",
 			// What goes into Zotero, apart from the connections that carry it (Zotero spec §1).
 			"Into Zotero",
-			"Zotero on the tablet",
+			"Send to your tablet",
+			// Built like Zotero and after it (Readwise spec §2): the other place highlights go.
+			"Readwise",
 			"Tagged Sync Pro",
-			"Actions",
+			"Help",
 		]);
 	});
 
@@ -326,7 +359,242 @@ describe("the shape of the settings screen", () => {
 		const drawn = draw(tab);
 
 		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).not.toContain("Tag routing");
-		expect(rowNames(section(drawn, "Actions"))).toEqual(["Report a problem", "Request a feature"]);
+		expect(rowNames(section(drawn, "reMarkable connection"))).not.toContain("Sync now");
+	});
+});
+
+describe("the reMarkable connection group", () => {
+	// Every row is ours to draw: dropdowns with a disabled option, pairing, the cloud code (spec §3.1).
+	// Rows come and go with `update()`, so they are in the array or out of it, never hidden (spec §2.4).
+	it("starts with Sync now once connected, then the sources and the cloud account", async () => {
+		const { tab } = await tabWith({ deviceToken: "d" });
+
+		expect(rowsOf(tab, "reMarkable connection")).toEqual([
+			{ name: "Sync now", kind: "render", shown: true },
+			{ name: "Sync from", kind: "render", shown: true },
+			{ name: "If that is not reachable", kind: "render", shown: true },
+			{ name: "reMarkable cloud account", kind: "render", shown: true },
+		]);
+		const syncNow = buttons(draw(tab), "Sync now");
+		expect(syncNow.map((button) => [button.text, button.cta])).toEqual([["Sync", true]]);
+	});
+
+	// The palette was the only way in, and the plugin registers no ribbon icon.
+	it("syncs from the button", async () => {
+		const { plugin, tab } = await tabWith({ deviceToken: "d" });
+		const synced = vi.fn();
+		(plugin as unknown as { syncNow(): void }).syncNow = synced;
+
+		await buttons(draw(tab), "Sync now")[0].click();
+
+		expect(synced).toHaveBeenCalledOnce();
+	});
+
+	it("asks for the one-time code while nothing is connected, and offers pairing only for a device source", async () => {
+		const cloudOnly = await tabWith();
+		expect(rowsOf(cloudOnly.tab, "reMarkable connection").map((item) => item.name)).toEqual([
+			"Sync from",
+			"If that is not reachable",
+			"reMarkable cloud account",
+			"Connect",
+		]);
+
+		const device = await tabWith({ primaryTransport: "ssh" });
+		expect(rowsOf(device.tab, "reMarkable connection").map((item) => item.name)).toEqual([
+			"Sync from",
+			"If that is not reachable",
+			"Connect device",
+			"reMarkable cloud account",
+			"Connect",
+		]);
+	});
+
+	it("finds Sync from by the words people search for", async () => {
+		const { tab } = await tabWith();
+		expect(itemsOf(tab, "reMarkable connection").find((item) => item.name === "Sync from")?.aliases).toEqual(["source", "SSH", "USB", "Wi-Fi", "cloud"]);
+	});
+});
+
+/** A group or page as `getSettingDefinitions()` answers it, as far as these tests read one. */
+interface Definition {
+	type?: string;
+	name?: string;
+	desc?: string;
+	heading?: string;
+	cls?: string;
+	aliases?: string[];
+	searchable?: boolean;
+	visible?: () => boolean;
+	control?: { type: string; key: string; disabled?: boolean | (() => boolean) };
+	render?: unknown;
+	items?: Definition[];
+	displayValue?: () => string;
+	status?: () => "warning" | null;
+}
+
+/** A page's groups as definitions: heading, class, and their rows as {@link rowsOf} reads them. */
+function pageGroups(tab: Tab, name: string): { heading?: string; cls?: string; rows: Row[] }[] {
+	return integrationPage(tab, name).items?.map((group) => ({ heading: group.heading, cls: group.cls, rows: rowsIn(group.items ?? []) })) ?? [];
+}
+
+/** The page `name` under *Integrations*, as a definition. */
+function integrationPage(tab: Tab, name: string): Definition {
+	const integrations = (tab.getSettingDefinitions() as unknown as Definition[]).find((item) => item.heading === "Integrations");
+	const page = integrations?.items?.find((item) => item.type === "page" && item.name === name);
+	if (!page) throw new Error(`no ${name} page`);
+	return page;
+}
+
+/** One root group's row definitions, as `getSettingDefinitions()` answers them. */
+function itemsOf(tab: Tab, heading: string): Definition[] {
+	const group = (tab.getSettingDefinitions() as unknown as Definition[]).find((item) => item.heading === heading);
+	if (!group) throw new Error(`no group "${heading}"`);
+	return group.items ?? [];
+}
+
+/**
+ * One root group's rows as definitions: the name, the kind (a control's type, `render`, or `text`),
+ * the control's key, and whether a `visible` predicate shows it right now.
+ */
+function rowsOf(tab: Tab, heading: string): Row[] {
+	return rowsIn(itemsOf(tab, heading));
+}
+
+type Row = { name: string; kind: string; key?: string; shown: boolean };
+
+function rowsIn(items: Definition[]): Row[] {
+	return items.map((item) => ({
+		name: item.name ?? "",
+		kind: item.control?.type ?? (item.render ? "render" : "text"),
+		...(item.control ? { key: item.control.key } : {}),
+		shown: item.visible?.() ?? true,
+	}));
+}
+
+describe("the declarative tab (settings-redesign spec §2, §3)", () => {
+	const groupsOf = (tab: Tab): [string | undefined, string | undefined][] =>
+		(tab.getSettingDefinitions() as unknown as Definition[]).map((group) => [group.heading, group.cls]);
+
+	it("answers with the root page's eight groups in order, Zotero and Readwise as pages", async () => {
+		const { tab } = await tabWith({ deviceToken: "d" });
+
+		expect(groupsOf(tab)).toEqual([
+			["reMarkable connection", "tagged-sync-group-connection"],
+			["Tag routing", "tagged-sync-group-tags"],
+			["Vault output", "tagged-sync-group-vault"],
+			["Transcription", "tagged-sync-group-transcription"],
+			["Automatic sync", "tagged-sync-group-autosync"],
+			["Integrations", "tagged-sync-group-integrations"],
+			["Tagged Sync Pro", "tagged-sync-group-pro"],
+			["Help", "tagged-sync-group-help"],
+		]);
+		const integrations = (tab.getSettingDefinitions() as unknown as Definition[])[5];
+		expect(integrations.items?.map((item) => [item.type, item.name])).toEqual([
+			["page", "Zotero"],
+			["page", "Readwise"],
+		]);
+	});
+
+	// Left out rather than hidden: a hidden row stays in the page and draws a stray border (spec §2.4).
+	it("leaves Tag routing out of the definitions until there is a device to sync with", async () => {
+		const { tab } = await tabWith();
+
+		expect(groupsOf(tab).map(([heading]) => heading)).not.toContain("Tag routing");
+	});
+
+	it("draws a row that throws as one sentence, and every other row as before", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-throws" });
+		const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+		const drawn = draw(tab);
+
+		expect(section(drawn, "Transcription")).toEqual([
+			expect.objectContaining({ kind: "row", name: "Backend" }),
+			expect.objectContaining({ kind: "row", desc: "This row could not be drawn. Copy diagnostics under Help and report it." }),
+		]);
+		expect(rowNames(section(drawn, "Vault output"))).toContain("Attachments folder");
+		expect(errors).toHaveBeenCalled();
+		errors.mockRestore();
+	});
+
+	// A predicate that throws must not take the tab with it either; hidden is the answer that shows
+	// nothing broken (spec §2.2).
+	it("hides a row whose visible predicate throws, and says why in the console", async () => {
+		const { plugin, tab } = await tabWith({ autoSync: { enabled: true, intervalHours: 6, autoTranscribeMetered: false } });
+		const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const drawn = draw(tab);
+		Object.defineProperty(plugin.data, "autoSync", {
+			get: () => {
+				throw new Error("broken");
+			},
+		});
+
+		tab.refreshDomState();
+
+		expect(rowNames(section(drawn, "Automatic sync"))).toEqual(["Enable automatic sync"]);
+		expect(errors).toHaveBeenCalled();
+		errors.mockRestore();
+	});
+
+	// It runs inside `onload` too (via `addSettingTab`), where a throw would stop the whole plugin.
+	it("answers one row instead of throwing when the definitions cannot be built", async () => {
+		const { plugin, tab } = await tabWith();
+		const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		(plugin as unknown as { transport(): never }).transport = () => {
+			throw new Error("broken");
+		};
+
+		expect(tab.getSettingDefinitions()).toEqual([
+			{ name: "The settings could not be drawn.", desc: "Report it with the steps that led here." },
+		]);
+		expect(errors).toHaveBeenCalled();
+		errors.mockRestore();
+	});
+
+	it("reads and writes data.json by dot path, replacing the object a running sync may hold", async () => {
+		const { plugin, tab } = await tabWith();
+		const before = plugin.data.zotero as { useWeb: boolean };
+
+		expect(tab.getControlValue("zotero.useWeb")).toBe(false);
+		await tab.setControlValue("zotero.useWeb", true);
+
+		expect(before.useWeb).toBe(false);
+		expect(tab.getControlValue("zotero.useWeb")).toBe(true);
+		expect((plugin.saves.at(-1) as { zotero: { useWeb: boolean } }).zotero.useWeb).toBe(true);
+	});
+
+	// A toggle's `setValue` fires its change again, and a re-render that sets would loop (spec §2.3).
+	it("saves nothing for the value that is already stored", async () => {
+		const { plugin, tab } = await tabWith({ marginNotes: false });
+		const saves = plugin.saves.length;
+
+		await tab.setControlValue("marginNotes", false);
+
+		expect(plugin.saves).toHaveLength(saves);
+	});
+
+	// Settings may sit in their own window, and closing it must not drop what was typed (spec §2.3).
+	it("holds a typed value back from data.json, and writes it when the tab closes", async () => {
+		const { plugin, tab } = await tabWith();
+		const saves = plugin.saves.length;
+
+		await tab.setControlValue("attachmentsFolder", "Renders");
+		expect(plugin.data.attachmentsFolder).toBe("Renders");
+		expect(plugin.saves).toHaveLength(saves);
+
+		tab.hide();
+		expect((plugin.saves.at(-1) as { attachmentsFolder: string }).attachmentsFolder).toBe("Renders");
+	});
+
+	// Written anyway, it would add a field `data.json` never had (spec scope: its shape stays).
+	it("refuses a key that names nothing in data.json, and saves nothing", async () => {
+		const { plugin, tab } = await tabWith();
+		const saves = plugin.saves.length;
+
+		await expect(tab.setControlValue("zotero.group:4711", true)).rejects.toThrow('no setting "zotero.group:4711"');
+		await expect(tab.setControlValue("nonsense", true)).rejects.toThrow('no setting "nonsense"');
+		expect(plugin.data).not.toHaveProperty("nonsense");
+		expect(plugin.saves).toHaveLength(saves);
 	});
 });
 
@@ -541,16 +809,34 @@ describe("where your notes come from", () => {
 
 	it("says out loud, before anyone types a password, what Developer Mode costs", async () => {
 		// The one fact no competitor states in-product, and the worst possible one to meet halfway
-		// through pairing. Folded away, but present and reachable without an attempt first.
+		// through pairing. Folded away, but present and reachable without an attempt first -- in the
+		// row's own description, since a group has no loose text between rows (spec P10).
 		const { tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ...BOUGHT_PRO });
-		const help = draw(tab).filter((item) => item.kind === "note" && item.cls.includes("tagged-sync-pairing-help"));
+		const help = row(draw(tab), "Connect device").setting.descEl.children.filter((child) => child.classes.has("tagged-sync-pairing-help"));
 
-		expect(help).toHaveLength(1);
-		expect(help[0].kind === "note" && help[0].text).toContain("erases the tablet");
+		expect(help.map((fold) => fold.tag)).toEqual(["details"]);
+		expect(help[0].allText().join(" ")).toContain("erases the tablet");
+		expect(help[0].children[0]).toMatchObject({ tag: "summary", text: "What your reMarkable needs before this works" });
 	});
 });
 
 describe("vault output", () => {
+	// Frontmatter stays drawn by our code: a refused switch has to be set back, and Obsidian leaves a
+	// control showing what was clicked (settings-redesign ticket 17's F5).
+	it("binds the folder and the handwriting switch to data.json, and draws frontmatter itself", async () => {
+		const { tab } = await tabWith();
+
+		expect(rowsOf(tab, "Vault output")).toEqual([
+			{ name: "Attachments folder", kind: "folder", key: "attachmentsFolder", shown: true },
+			{ name: "Your notes on PDFs", kind: "toggle", key: "marginNotes", shown: true },
+			{ name: "Frontmatter properties (Pro)", kind: "render", shown: true },
+		]);
+		expect(itemsOf(tab, "Vault output")[0]).toMatchObject({
+			aliases: ["PDF folder", "render"],
+			control: { placeholder: DEFAULT_ATTACHMENTS_FOLDER, includeRoot: false },
+		});
+	});
+
 	it("shows the folder the plugin will actually use, as both placeholder and value", async () => {
 		// The default is seeded by the settings migration rather than left empty, so the field arrives
 		// filled: a fresh install reads its own answer instead of an empty box under a grey hint, and
@@ -590,9 +876,10 @@ describe("vault output", () => {
 		expect((plugin.saves[0] as { attachmentsFolder: string }).attachmentsFolder).toBe("Notes/PDF");
 	});
 
-	it("re-renders every synced note when the handwriting switch moves", async () => {
-		// The device has not changed, so nothing would re-run without this: the switch decides what a
-		// note *contains*, and every already-synced note has to be rewritten to match.
+	it("records the old value when the handwriting switch moves, and rewrites no note yet", async () => {
+		// Decided at the next sync (`settleMarginNotesChoice`), not here: a switch knocked off and back on
+		// must not read every margin note again. What it needs from here is what the last sync ran with,
+		// on a vault that has not recorded that yet.
 		const { plugin, tab } = await tabWith({
 			syncIndex: { rows: { a: { notePath: "a.md", status: "active", renderVersion: 7 } } },
 		});
@@ -603,8 +890,9 @@ describe("vault output", () => {
 		await settle();
 
 		expect(plugin.data.marginNotes).toBe(true);
-		const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> } };
-		expect(saved.syncIndex.rows.a.renderVersion).toBeUndefined();
+		const saved = plugin.saves.at(-1) as { marginNotesSynced?: boolean; syncIndex: { rows: Record<string, { renderVersion?: number }> } };
+		expect(saved.syncIndex.rows.a.renderVersion).toBe(7);
+		expect(saved.marginNotesSynced).toBe(false);
 	});
 
 	// An active trial -- the cheapest entitlement that unlocks Pro, with no key to fake.
@@ -710,13 +998,16 @@ describe("the backend dropdown", () => {
 	 * The re-draw above is what makes the rows right; this is what stops it costing the reader their
 	 * place. Transcription sits well down a long page, so choosing a backend emptied the element the
 	 * pane scrolls, took the offset to zero with it, and left the user at the top -- away from the very
-	 * setting they had just changed. Reported from a real settings page on 2026-09-10.
+	 * setting they had just changed. Reported from a real settings page on 2026-09-10. Since 1.11.0
+	 * `update()` keeps the place itself (measured, settings-redesign ticket 17's F1); this guards that
+	 * nothing of ours moves it.
 	 */
 	it("leaves the reader where they were after a re-draw", async () => {
 		const { tab } = await tabWith({ ocrBackend: "off" });
+		const drawn = draw(tab);
 		tab.containerEl.scrollTop = 420;
 
-		dropdown(draw(tab), "Backend").pick("test-plain");
+		dropdown(drawn, "Backend").pick("test-plain");
 		await settle();
 
 		expect(tab.containerEl.scrollTop).toBe(420);
@@ -783,6 +1074,56 @@ describe("the transcript sentence in the Backend row", () => {
 });
 
 describe("a backend's own rows", () => {
+	// One row hosts them (spec P3): the backends keep their code, and settings search skips the host.
+	it("are hosted by one unsearchable row, there only while the selected backend has rows", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-plain" });
+
+		expect(rowsOf(tab, "Transcription")).toEqual([
+			{ name: "Backend", kind: "render", shown: true },
+			{ name: "Backend settings", kind: "render", shown: true },
+		]);
+		expect(itemsOf(tab, "Transcription").map((item) => [item.aliases, item.searchable])).toEqual([
+			[["OCR", "handwriting", "transcription model"], undefined],
+			[undefined, false],
+		]);
+		expect(rowsOf((await tabWith({ ocrBackend: "off" })).tab, "Transcription").map((item) => item.name)).toEqual(["Backend"]);
+	});
+
+	it("draws them into the host row's own element, without the row's name or controls beside them", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-cleanup" });
+		const drawn = draw(tab);
+
+		expect(rowNames(section(drawn, "Transcription"))).toEqual(["Backend", "Backend's own row"]);
+		const own = row(drawn, "Backend's own row").setting.settingEl.parentEl;
+		expect(own?.classes.has("tagged-sync-backend-host")).toBe(true);
+	});
+
+	// Obsidian keeps the host row across a redraw (same name, same row) and draws into it again; the
+	// rows of the backend left behind must go with the switch. Found on the device: the local model's
+	// card stayed under LM Studio's rows.
+	it("replaces the previous backend's rows when another backend is picked", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-cleanup" });
+		dropdown(draw(tab), "Backend").pick("test-plain");
+		await settle();
+
+		const drawn = onScreen(tab);
+		expect(rowNames(section(drawn, "Transcription"))).not.toContain("Backend's own row");
+		const hosts = row(drawn, "Backend settings").setting.settingEl.children.filter((child) => child.classes.has("tagged-sync-backend-host"));
+		expect(hosts.map((host) => host.allText())).toEqual([["rows:test-plain"]]);
+	});
+
+	// The local model's card redraws itself on each download tick; a torn-down host must stop that.
+	it("tears the backend's rows down with the host row: on a redraw and when the tab closes", async () => {
+		tornDown.length = 0;
+		const { tab } = await tabWith({ ocrBackend: "test-cleanup" });
+		draw(tab);
+
+		tab.update();
+		expect(tornDown).toEqual(["test-cleanup"]);
+		tab.hide();
+		expect(tornDown).toEqual(["test-cleanup", "test-cleanup"]);
+	});
+
 	it("draws the settings rows of the selected backend and of no other", async () => {
 		const { tab } = await tabWith({ ocrBackend: "test-plain" });
 		draw(tab);
@@ -798,38 +1139,64 @@ describe("a backend's own rows", () => {
 describe("automatic sync", () => {
 	const AUTO_ON = { enabled: true, intervalHours: 6, autoTranscribeMetered: false };
 
+	it("keeps its rows as controls bound to data.json, the ones after the switch shown only while it is on", async () => {
+		const off = await tabWith({ ocrBackend: "anthropic" });
+		expect(rowsOf(off.tab, "Automatic sync")).toEqual([
+			{ name: "Enable automatic sync", kind: "toggle", key: "autoSync.enabled", shown: true },
+			{ name: "Sync interval", kind: "dropdown", key: "autoSync.interval", shown: false },
+			{ name: BACKGROUND_CONSENT_NAME, kind: "toggle", key: "autoSync.autoTranscribeMetered", shown: false },
+		]);
+
+		// The consent row whose blob the backend owns is drawn by our code: its description reads the disk.
+		const on = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-consent" });
+		expect(rowsOf(on.tab, "Automatic sync")).toEqual([
+			{ name: "Enable automatic sync", kind: "toggle", key: "autoSync.enabled", shown: true },
+			{ name: "Sync interval", kind: "dropdown", key: "autoSync.interval", shown: true },
+			{ name: BACKGROUND_CONSENT_NAME, kind: "render", shown: true },
+		]);
+	});
+
 	it("shows one switch and nothing else while it is off", async () => {
 		const { tab } = await tabWith();
 
 		expect(rowNames(section(draw(tab), "Automatic sync"))).toEqual(["Enable automatic sync"]);
 	});
 
-	it("re-draws the moment it is switched on, so the rows it unlocks are there to be set", async () => {
+	// The rows it unlocks are in the page already and only shown (spec §3.5): nothing is drawn again,
+	// so the page cannot jump under the reader's pointer.
+	it("shows the rows it unlocks the moment it is switched on, without drawing the page again", async () => {
 		const { plugin, tab } = await tabWith();
-		toggle(draw(tab), "Enable automatic sync").toggle(true);
+		const drawn = draw(tab);
+		toggle(drawn, "Enable automatic sync").toggle(true);
 		await settle();
 
 		expect((plugin.saves.at(-1) as { autoSync: { enabled: boolean } }).autoSync.enabled).toBe(true);
-		expect(rowNames(section(onScreen(tab), "Automatic sync"))).toEqual(["Enable automatic sync", "Sync interval"]);
+		expect(rowNames(section(drawn, "Automatic sync"))).toEqual(["Enable automatic sync", "Sync interval"]);
+		expect(takeSettings()).toEqual([]);
 	});
 
-	it("offers launch-only and four intervals, and stores launch-only as no interval at all", async () => {
+	// Not numeric keys: an object lists integer-like keys first, which would put "Only on launch" last.
+	it("offers launch-only and four intervals, launch-only first, and stores it as no interval at all", async () => {
 		const { plugin, tab } = await tabWith({ autoSync: AUTO_ON });
 		const interval = dropdown(draw(tab), "Sync interval");
 
-		expect(interval.options).toEqual({
-			launch: "Only on launch",
-			"2": "Every 2 hours",
-			"6": "Every 6 hours",
-			"12": "Every 12 hours",
-			"24": "Every 24 hours",
-		});
-		expect(interval.value).toBe("6");
+		expect(Object.entries(interval.options)).toEqual([
+			["launch", "Only on launch"],
+			["h2", "Every 2 hours"],
+			["h6", "Every 6 hours"],
+			["h12", "Every 12 hours"],
+			["h24", "Every 24 hours"],
+		]);
+		expect(interval.value).toBe("h6");
 
 		interval.pick("launch");
 		await settle();
 		expect((plugin.data.autoSync as { intervalHours: number | null }).intervalHours).toBeNull();
 		expect(dropdown(draw(tab), "Sync interval").value).toBe("launch");
+
+		dropdown(draw(tab), "Sync interval").pick("h12");
+		await settle();
+		expect((plugin.saves.at(-1) as { autoSync: { intervalHours: number | null } }).autoSync.intervalHours).toBe(12);
 	});
 
 	it("re-arms the timer on every change, not only on the next restart", async () => {
@@ -840,7 +1207,7 @@ describe("automatic sync", () => {
 		const clock = (plugin as unknown as { scheduler: FakeClock }).scheduler;
 		const before = clock.armed;
 
-		dropdown(draw(tab), "Sync interval").pick("2");
+		dropdown(draw(tab), "Sync interval").pick("h2");
 		await settle();
 
 		expect(clock.armed).toBe(before + 1);
@@ -914,13 +1281,13 @@ describe("the Zotero section", () => {
 		const { tab } = await tabWith();
 		const drawn = draw(tab);
 
-		const headings = drawn.filter((item) => item.kind === "heading").map((item) => item.name);
-		expect(headings).toContain("Zotero");
-		expect(headings.indexOf("Zotero cloud")).toBeGreaterThan(headings.indexOf("Zotero"));
-		expect(headings.indexOf("Zotero local")).toBeGreaterThan(headings.indexOf("Zotero cloud"));
-		expect(toggle(section(drawn, "Zotero cloud"), "Use zotero.org").disabled).toBe(false);
-		expect(toggle(section(drawn, "Zotero local"), "Use the Zotero desktop app (Pro)").disabled).toBe(true);
-		expect(row(drawn, "Connection").desc).toContain("part of Tagged Sync Pro");
+		const page = section(drawn, "Zotero");
+		expect(toggle(page, "Use zotero.org").disabled).toBe(false);
+		expect(toggle(page, "Use the Zotero desktop app (Pro)").disabled).toBe(true);
+		// The Pro rows are on this page, not below it (settings-redesign P5).
+		expect(row(page, "Connection").desc).toBe(
+			"zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro.",
+		);
 	});
 
 	it("drops the (Pro) and opens both connections for a buyer", async () => {
@@ -933,29 +1300,107 @@ describe("the Zotero section", () => {
 	});
 
 	// One switch per connection (desk test 2026-09-13): whether anything goes over the internet is
-	// then one visible thing, not "is the key field empty". The key row belongs to the switch.
-	it("shows the key row only while zotero.org is switched on, under its own heading", async () => {
+	// then one visible thing, not "is the key field empty". The key row belongs to the switch, and is
+	// left out rather than hidden while it is off: the switch redraws the page anyway (spec §2.4).
+	it("puts the key row on the page only while zotero.org is switched on", async () => {
 		const off = draw((await tabWith(PRO)).tab);
-		expect(row(off, "Zotero API key").setting.settingEl.visible).toBe(false);
+		expect(rowNames(section(off, "Zotero"))).toEqual(["Connection", "Use zotero.org", "Use the Zotero desktop app"]);
 
 		const on = draw((await tabWith({ ...PRO, zotero: { useWeb: true } })).tab);
-		expect(row(on, "Zotero API key").setting.settingEl.visible).toBe(true);
-		expect(rowNames(section(on, "Zotero cloud"))).toEqual(["Use zotero.org", "Zotero API key"]);
-		expect(rowNames(section(on, "Zotero local"))).toEqual(["Use the Zotero desktop app"]);
-		expect(rowNames(section(on, "Zotero on the tablet"))).toContain("Tablet folder for sent PDFs");
+		expect(rowNames(section(on, "Zotero"))).toEqual(["Connection", "Use zotero.org", "Zotero API key", "Use the Zotero desktop app"]);
+		expect(rowNames(section(on, "Send to your tablet"))).toContain("Tablet folder for sent PDFs");
 	});
 
 	it("saves the cloud switch, shows the key row and asks the status line again", async () => {
 		const { plugin, tab } = await tabWith(PRO);
-		const drawn = draw(tab);
-		toggle(drawn, "Use zotero.org").toggle(true);
+		toggle(draw(tab), "Use zotero.org").toggle(true);
 		await settle();
 
+		const drawn = onScreen(tab);
 		expect((plugin.data.zotero as { useWeb: boolean }).useWeb).toBe(true);
 		expect(plugin.saves).toHaveLength(1);
-		expect(row(drawn, "Zotero API key").setting.settingEl.visible).toBe(true);
+		expect(rowNames(drawn)).toContain("Zotero API key");
 		// On with no key yet is still nothing: the line was asked again and says so.
 		expect(verdict(row(drawn, "Connection")).text).toBe("Not connected.");
+	});
+
+	// Settings-redesign spec §6: four groups, the connection without a heading; every switch and field
+	// is a control row bound to its `data.json` key, and the live lines are drawn by our code.
+	it("answers four groups on its page, each row bound to its key", async () => {
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" } });
+
+		expect(pageGroups(tab, "Zotero")).toEqual([
+			{
+				heading: undefined,
+				cls: "tagged-sync-group-zotero-connection",
+				rows: [
+					{ name: "Connection", kind: "render", shown: true },
+					{ name: "Use zotero.org", kind: "toggle", key: "zotero.useWeb", shown: true },
+					{ name: "Zotero API key", kind: "render", shown: true },
+					{ name: "Use the Zotero desktop app", kind: "toggle", key: "zotero.useLocal", shown: true },
+				],
+			},
+			{ heading: "Libraries", cls: "tagged-sync-group-zotero-libraries", rows: [{ name: "Group libraries", kind: "render", shown: true }] },
+			{
+				heading: "Into Zotero",
+				cls: "tagged-sync-group-zotero-into",
+				rows: [
+					{ name: "Write text to Zotero", kind: "toggle", key: "zotero.writeText", shown: true },
+					{ name: "Add the render to Zotero", kind: "toggle", key: "zotero.addRender", shown: true },
+					{ name: "What leaves your machine", kind: "text", shown: true },
+				],
+			},
+			{
+				heading: "Send to your tablet",
+				cls: "tagged-sync-group-zotero-send",
+				rows: [
+					{ name: "Tablet folder for sent PDFs", kind: "text", key: "zotero.folder", shown: true },
+					{ name: "Send tag in Zotero", kind: "text", key: "zotero.sendTag", shown: true },
+					{ name: "Send over SSH when the cloud is not connected", kind: "toggle", key: "zotero.sendOverSsh", shown: true },
+				],
+			},
+		]);
+	});
+
+	it("finds the key field by the word people search for", async () => {
+		const { tab } = await tabWith({ zotero: { useWeb: true } });
+		const connection = integrationPage(tab, "Zotero").items?.[0].items ?? [];
+
+		expect(connection.find((item) => item.name === "Zotero API key")?.aliases).toEqual(["token"]);
+	});
+
+	// Settings-redesign spec §5: the entry on the root says what is set up, without opening the page.
+	describe("its entry on the root", () => {
+		const entry = (tab: Tab): unknown => {
+			takeSettings();
+			renderSettingTab(tab);
+			return takeSettings().find((setting: Setting) => setting.name === "Zotero")?.components;
+		};
+
+		it("warns for zotero.org switched on with no key behind it", async () => {
+			expect(entry((await tabWith({ zotero: { useWeb: true } })).tab)).toEqual([expect.objectContaining({ value: "No API key", status: "warning" })]);
+		});
+
+		it("names both connections for a buyer who set up both", async () => {
+			const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: true } });
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "zotero.org + desktop app", status: null })]);
+		});
+
+		// A predicate that throws must not take the tab with it (spec §2.2): an empty entry shows nothing broken.
+		it("shows nothing on the entry when its state cannot be read, and says why in the console", async () => {
+			const { plugin, tab } = await tabWith();
+			const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+			const page = integrationPage(tab, "Zotero");
+			Object.defineProperty(plugin.data, "zotero", {
+				get: () => {
+					throw new Error("broken");
+				},
+			});
+
+			expect([page.displayValue?.(), page.status?.()]).toEqual(["", null]);
+			expect(errors).toHaveBeenCalled();
+			errors.mockRestore();
+		});
 	});
 
 	// A key left in place with the switch off is kept, and reaches nothing: the line says so without
@@ -1021,18 +1466,57 @@ describe("the Zotero section", () => {
 			expect(toggle(drawn, "Write text to Zotero").disabled).toBe(false);
 
 			toggle(drawn, "Use zotero.org").toggle(true);
-			field(drawn, "Zotero API key").type("P9c46b0lkV2XzAoUTqPmPuGZ");
+			await settle();
+			const typing = onScreen(tab);
+			const key = field(typing, "Zotero API key");
+			key.type("P9c46b0lkV2XzAoUTqPmPuGZ");
 			await settle();
 
-			// Updated in place, not redrawn: a redraw under a field being typed into takes its focus.
+			// Opened in place while the key is typed, not redrawn: a redraw under a field being typed into
+			// takes its focus. The sentence follows when the field is left (settings-redesign P15).
 			expect(plugin.data.zotero).toMatchObject(WEB);
-			expect(toggle(drawn, "Add the render to Zotero").disabled).toBe(false);
-			expect(row(drawn, "Add the render to Zotero").setting.desc).toMatch(/^Uploads the PDF/);
+			expect(takeSettings()).toEqual([]);
+			expect(toggle(typing, "Add the render to Zotero").disabled).toBe(false);
+			expect(row(typing, "Add the render to Zotero").setting.desc).toMatch(/^Needs a zotero\.org connection\./);
+
+			key.inputEl.dispatch("blur");
+			expect(row(onScreen(tab), "Add the render to Zotero").setting.desc).toMatch(/^Uploads the PDF/);
 		});
 
-		// Zotero spec §10 P7: nothing changed on the tablet, so without this the switch would wait for a
-		// change before anything reached Zotero -- and then only for that one document.
-		it.each(["Write text to Zotero", "Add the render to Zotero"])("makes the Zotero-linked documents due once when %s is switched on", async (name) => {
+		// Settings-redesign spec §2.8: a change that ends in `update()` leaves the probe to the redraw --
+		// one request per change, not one from the redraw and one from the typing's debounce.
+		it("asks zotero.org once when the field is left before the line's own recheck", async () => {
+			vi.useFakeTimers();
+			const asked = vi.fn(async (input: RequestInfo | URL) =>
+				String(input).endsWith("/keys/current") ? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 }) : new Response("[]", { status: 200 }),
+			);
+			stubNetwork(asked);
+			// Free, so no group lookup redraws the page and asks again on its own.
+			const { tab } = await tabWith({ zotero: { useWeb: true } });
+			const key = field(draw(tab), "Zotero API key");
+
+			key.type("P9c46b0lkV2XzAoUTqPmPuGZ");
+			await vi.advanceTimersByTimeAsync(0);
+			key.inputEl.dispatch("blur");
+			await vi.advanceTimersByTimeAsync(700);
+
+			// `/items/top` is the line's probe (`status()`); `/keys/current` comes with every client call.
+			expect(asked.mock.calls.filter(([input]) => String(input).includes("/items/top"))).toHaveLength(1);
+		});
+
+		it("draws nothing again when the field is left with the connection as it was", async () => {
+			const { tab } = await tabWith({ ...PRO, zotero: WEB });
+			const key = field(draw(tab), "Zotero API key");
+
+			key.type("ANOTHERGOODKEYANOTHERGOO");
+			key.inputEl.dispatch("blur");
+
+			expect(takeSettings()).toEqual([]);
+		});
+
+		// Decided at the next sync (`settleZoteroSwitches`), so a switch knocked off and back on reads
+		// nothing again. What it needs from here is what the last sync ran with, on a vault without it.
+		it.each(["Write text to Zotero", "Add the render to Zotero"])("records the old values and makes no document due yet when %s is switched on", async (name) => {
 			const index = {
 				rows: {
 					"doc-1::sync": { docId: "doc-1", notePath: "a.md", status: "active", renderVersion: 33 },
@@ -1046,9 +1530,10 @@ describe("the Zotero section", () => {
 			toggle(drawn, name).toggle(true);
 			await settle();
 
-			const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> }; zotero: Record<string, boolean> };
-			expect([saved.syncIndex.rows["doc-1::sync"].renderVersion, saved.syncIndex.rows["doc-2::sync"].renderVersion]).toEqual([undefined, 33]);
+			const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> }; zotero: Record<string, boolean>; zoteroSwitchesSynced?: unknown };
+			expect([saved.syncIndex.rows["doc-1::sync"].renderVersion, saved.syncIndex.rows["doc-2::sync"].renderVersion]).toEqual([33, 33]);
 			expect(saved.zotero[name === "Write text to Zotero" ? "writeText" : "addRender"]).toBe(true);
+			expect(saved.zoteroSwitchesSynced).toEqual({ writeText: false, addRender: false });
 		});
 
 		it("leaves every document as it is when a switch goes off", async () => {
@@ -1109,7 +1594,7 @@ describe("the Zotero section", () => {
 		draw(tab);
 		await settle();
 
-		const libraries = section(draw(tab), "Zotero libraries");
+		const libraries = section(draw(tab), "Libraries");
 		expect(rowNames(libraries)).toEqual(["Group libraries", "Lab reading group"]);
 		expect(row(libraries, "Group libraries").desc).toContain("visible to everyone in that group");
 		toggle(libraries, "Lab reading group").toggle(true);
@@ -1123,7 +1608,7 @@ describe("the Zotero section", () => {
 		draw(tab);
 		await settle();
 
-		const libraries = section(draw(tab), "Zotero libraries");
+		const libraries = section(draw(tab), "Libraries");
 		expect(row(libraries, "Lab reading group").desc).toContain("Not listed by Zotero right now");
 		toggle(libraries, "Lab reading group").toggle(false);
 		await settle();
@@ -1136,8 +1621,8 @@ describe("the Zotero section", () => {
 		const drawn = draw((await tabWith({ zotero: WEB })).tab);
 		await settle();
 
-		expect(rowNames(section(drawn, "Zotero libraries"))).toEqual(["Group libraries (Pro)"]);
-		expect(toggle(section(drawn, "Zotero libraries"), "Group libraries (Pro)").disabled).toBe(true);
+		expect(rowNames(section(drawn, "Libraries"))).toEqual(["Group libraries (Pro)"]);
+		expect(toggle(section(drawn, "Libraries"), "Group libraries (Pro)").disabled).toBe(true);
 		expect(fetched.mock.calls.map((call) => String(call[0]))).not.toContainEqual(expect.stringContaining("/groups"));
 	});
 
@@ -1215,7 +1700,7 @@ describe("the Zotero section", () => {
 	// writes to `data.json` otherwise.
 	it("takes a typed key immediately and reaches data.json when the typing stops", async () => {
 		vi.useFakeTimers();
-		const { plugin, tab } = await tabWith(PRO);
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { useWeb: true } });
 		const text = field(draw(tab), "Zotero API key");
 
 		text.type("P9c46b0lkV2XzAoUTqPmPuGZ");
@@ -1305,7 +1790,7 @@ describe("the Zotero section", () => {
 		await settle();
 
 		// Every draw starts with this heading, so counting it counts the redraws since the two above.
-		const redraws = takeSettings().filter((setting: Setting) => setting.heading && setting.name === "Where your notes come from");
+		const redraws = takeSettings().filter((setting: Setting) => setting.heading && setting.name === "reMarkable connection");
 		expect(redraws).toHaveLength(1);
 	});
 
@@ -1319,7 +1804,7 @@ describe("the Zotero section", () => {
 		const drawn = draw(tab);
 		await settle();
 
-		expect(verdict(row(section(drawn, "Zotero libraries"), "Group libraries")).text).toContain("Could not list your groups:");
+		expect(verdict(row(section(drawn, "Libraries"), "Group libraries")).text).toContain("Could not list your groups:");
 	});
 
 	// A group the user switched on is theirs to see and to switch off before Zotero has said a word.
@@ -1327,7 +1812,437 @@ describe("the Zotero section", () => {
 		stubNetwork(zoteroAnswering([]));
 		const { tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
 
-		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Group libraries", "Lab reading group"]);
+		expect(rowNames(section(draw(tab), "Libraries"))).toEqual(["Group libraries", "Lab reading group"]);
+	});
+
+	// Settings-redesign spec §6.2: one control per group, `zotero.group:<id>`; the stored list is
+	// replaced, never changed in place, and holds the name Zotero gave beside the id.
+	it("binds each group to a key of its own, and refuses a group nobody has named", async () => {
+		stubNetwork(zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 815, name: "Old group" }] } });
+		draw(tab);
+		await settle();
+		const before = (plugin.data.zotero as { groups: unknown[] }).groups;
+
+		expect(pageGroups(tab, "Zotero")[1].rows.map((item) => item.key)).toEqual([undefined, "zotero.group:815", "zotero.group:4711"]);
+		expect([tab.getControlValue("zotero.group:815"), tab.getControlValue("zotero.group:4711")]).toEqual([true, false]);
+		await tab.setControlValue("zotero.group:4711", true);
+		await tab.setControlValue("zotero.group:815", false);
+		const saves = plugin.saves.length;
+		// A toggle's `setValue` fires its change again: the stored value is no change (spec §2.3).
+		await tab.setControlValue("zotero.group:4711", true);
+
+		expect((plugin.data.zotero as { groups: unknown }).groups).toEqual([{ id: 4711, name: "Lab reading group" }]);
+		expect(before).toEqual([{ id: 815, name: "Old group" }]);
+		expect(plugin.saves).toHaveLength(saves);
+		await expect(tab.setControlValue("zotero.group:9", true)).rejects.toThrow('no setting "zotero.group:9"');
+	});
+});
+
+describe("the Readwise page", () => {
+	// Readwise spec §2: shown to every vault, the switch shut with "(Pro)" to a free one; the token is a
+	// Keychain entry's name in data.json, never the token; the Connection line says which of §2.1's
+	// states this computer is in, counts from the state and never from Readwise. Settings-redesign spec
+	// §7: one group without a heading on a page of its own.
+	const PRO = {
+		licence: {
+			...NO_LICENCE,
+			key: "TS-XXXX-1234",
+			activationId: "act-1",
+			validatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+		},
+	};
+	const ON = { readwise: { push: true, tokenSecret: "readwise-token" } };
+
+	/** An app whose Keychain holds `token` under the entry `ON` names. */
+	function keychainWith(token: string): FakeApp {
+		const app = new FakeApp();
+		app.secretStorage.secrets.set("readwise-token", token);
+		return app;
+	}
+
+	/** readwise.io's `/auth/` answering `status`, every request to readwise.io recorded (a Pro vault's Zotero line asks too). */
+	function readwiseAnswering(status: number): string[] {
+		const asked: string[] = [];
+		stubNetwork(async (input) => {
+			if (String(input).startsWith("https://readwise.io/")) asked.push(String(input));
+			return new Response(null, { status });
+		});
+		return asked;
+	}
+
+	const lineOf = (drawn: Drawn[]): FakeEl => verdict(row(section(drawn, "Readwise"), "Connection"));
+	const secret = (drawn: Drawn[]): SecretComponent => row(drawn, "Readwise access token").setting.components[0] as SecretComponent;
+	/** Waits for the line to read `text`: a probe first hashes the token, which takes the crypto worker more than one tick. */
+	const answered = (drawn: Drawn[], text: string) => vi.waitFor(() => expect(lineOf(drawn).text).toBe(text));
+
+	it("draws the rows of the spec, in its words", async () => {
+		const drawn = draw((await tabWith(PRO)).tab);
+
+		expect(rowNames(section(drawn, "Readwise"))).toEqual(["Connection", "Push highlights to Readwise", "Readwise access token", "Readwise's own Obsidian plugin"]);
+		expect(row(drawn, "Push highlights to Readwise").desc).toBe(
+			"Your highlights and margin notes become highlights in your Readwise library, one book or article per document, and come up in your Daily Review. " +
+				"The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access " +
+				"(Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.",
+		);
+		expect(row(drawn, "Readwise access token").desc).toBe(
+			"From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.",
+		);
+		expect(row(drawn, "Readwise's own Obsidian plugin").desc).toBe(
+			"If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, each highlight linking to your note. " +
+				"To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book.",
+		);
+		expect(toggle(drawn, "Push highlights to Readwise").disabled).toBe(false);
+	});
+
+	it("answers one group without a heading on its page, each row bound to its key", async () => {
+		const { tab } = await tabWith({ ...PRO, ...ON, readwiseAccountClash: true }, keychainWith("rw-token"));
+
+		expect(pageGroups(tab, "Readwise")).toEqual([
+			{
+				heading: undefined,
+				cls: "tagged-sync-group-readwise",
+				rows: [
+					{ name: "Connection", kind: "render", shown: true },
+					{ name: "Push highlights to Readwise", kind: "toggle", key: "readwise.push", shown: true },
+					{ name: "Readwise access token", kind: "secret", key: "readwise.tokenSecret", shown: true },
+					{ name: "Readwise's own Obsidian plugin", kind: "text", shown: true },
+					{ name: "Start over with this computer's token", kind: "render", shown: true },
+				],
+			},
+		]);
+	});
+
+	it("finds the token field by the word people search for", async () => {
+		const { tab } = await tabWith(PRO);
+		const rows = integrationPage(tab, "Readwise").items?.[0].items ?? [];
+
+		expect(rows.find((item) => item.name === "Readwise access token")?.aliases).toEqual(["API key"]);
+	});
+
+	// Settings-redesign spec §5: the entry on the root says whether this computer pushes, without opening the page.
+	describe("its entry on the root", () => {
+		const entry = (tab: Tab): unknown => {
+			takeSettings();
+			renderSettingTab(tab);
+			return takeSettings().find((setting: Setting) => setting.name === "Readwise")?.components;
+		};
+
+		it("says Pro to a free vault, without reading the Keychain", async () => {
+			const app = keychainWith("rw-token");
+			const keychain = vi.spyOn(app.secretStorage, "getSecret");
+			const { tab } = await tabWith(ON, app);
+
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pro", status: null })]);
+			expect(keychain).not.toHaveBeenCalled();
+		});
+
+		it("warns for a switch on with no token on this computer", async () => {
+			expect(entry((await tabWith({ ...PRO, ...ON })).tab)).toEqual([expect.objectContaining({ value: "No access token", status: "warning" })]);
+		});
+
+		it("warns once readwise.io did not accept the token, and forgets it when another token is chosen", async () => {
+			const app = keychainWith("rw-token");
+			app.secretStorage.secrets.set("readwise-new", "rw-new");
+			// The old token refused, at once and then once more late; the new one's answer never comes, so only
+			// the choice can clear the warning.
+			const asked: (string | null)[] = [];
+			const late: ((response: Response) => void)[] = [];
+			stubNetwork((_input, init) => {
+				const token = new Headers(init?.headers).get("Authorization");
+				asked.push(token);
+				if (token !== "Token rw-token") return new Promise<Response>(() => undefined);
+				return asked.length === 1 ? Promise.resolve(new Response(null, { status: 401 })) : new Promise<Response>((resolve) => late.push(resolve));
+			});
+			const { tab } = await tabWith({ ...PRO, ...ON }, app);
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pushing", status: null })]);
+
+			renderSettingTab(tab, { page: "Readwise" });
+			const first = onScreen(tab);
+			await vi.waitFor(() => expect(verdict(row(first, "Connection")).text).toBe("The access token was not accepted — paste a new one from readwise.io/access_token."));
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Token not accepted", status: "warning" })]);
+
+			renderSettingTab(tab, { page: "Readwise" });
+			const drawn = onScreen(tab);
+			await vi.waitFor(() => expect(late).toHaveLength(1));
+			await secret(drawn).pick("readwise-new");
+			// Asked inside this test, so the probe cannot land in the next one's network.
+			await vi.waitFor(() => expect(asked).toContain("Token rw-new"));
+			// The old token's answer, after the choice: about a token no longer in use.
+			late[0](new Response(null, { status: 401 }));
+			await settle();
+
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pushing", status: null })]);
+		});
+
+		// The reader glanced at the page and went back before readwise.io answered: the answer is still about this token.
+		it("warns on an answer that comes after the page was left", async () => {
+			const answers: ((response: Response) => void)[] = [];
+			stubNetwork(() => new Promise((resolve) => answers.push(resolve)));
+			const { tab } = await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"));
+			renderSettingTab(tab, { page: "Readwise" });
+			await vi.waitFor(() => expect(answers).toHaveLength(1));
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pushing", status: null })]);
+
+			answers[0](new Response(null, { status: 401 }));
+			await settle();
+
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Token not accepted", status: "warning" })]);
+		});
+	});
+
+	it("shows a free vault the switch shut, and says pushing is Pro", async () => {
+		const asked = readwiseAnswering(204);
+		const drawn = draw((await tabWith(ON, keychainWith("rw-token"))).tab);
+		await settle();
+
+		expect(toggle(drawn, "Push highlights to Readwise (Pro)").disabled).toBe(true);
+		expect(lineOf(drawn).text).toBe("Pushing to Readwise is part of Tagged Sync Pro.");
+		expect(lineOf(drawn).style.color).toBe("var(--text-muted)");
+		expect(asked).toEqual([]);
+	});
+
+	it("reads Off. while the switch is off, without asking readwise.io", async () => {
+		const asked = readwiseAnswering(204);
+		const drawn = draw((await tabWith({ ...PRO, readwise: { push: false, tokenSecret: "readwise-token" } }, keychainWith("rw-token"))).tab);
+		await settle();
+
+		expect(lineOf(drawn).text).toBe("Off.");
+		expect(asked).toEqual([]);
+	});
+
+	it("says so when this computer has no token, without asking readwise.io", async () => {
+		const asked = readwiseAnswering(204);
+		const drawn = draw((await tabWith({ ...PRO, ...ON })).tab);
+		await settle();
+
+		expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+		expect(lineOf(drawn).style.color).toBe("var(--text-error)");
+		expect(asked).toEqual([]);
+	});
+
+	it("asks readwise.io and counts what the state says was pushed", async () => {
+		const asked = readwiseAnswering(204);
+		const { tab } = await tabWith(
+			{
+				...PRO,
+				...ON,
+				readwiseBooks: {
+					a: {
+						title: "A",
+						highlights: {
+							"p:1": { pushed: { text: "one", location: 1 } },
+							"p:2": { pushed: { text: "two", location: 1 } },
+							"p:4": { want: { text: "four", location: 1 }, rejected: { text: "four", location: 1 } },
+						},
+					},
+					b: { title: "B", highlights: { "p:3": { want: { text: "three", location: 2 } } } },
+				},
+			},
+			keychainWith("rw-token"),
+		);
+		const drawn = draw(tab);
+		const tail = " 1 document waiting to be pushed. 1 highlight Readwise refused — it is retried when it changes on the tablet.";
+		expect(lineOf(drawn).text).toBe(`Checking…${tail}`);
+		await answered(drawn, `Connected — 1 book, 2 highlights pushed.${tail}`);
+
+		expect(asked).toEqual(["https://readwise.io/api/v2/auth/"]);
+		expect(lineOf(drawn).style.color).toBe("var(--text-success)");
+	});
+
+	it("reads 0 books before the first push, and says what Readwise refused", async () => {
+		readwiseAnswering(204);
+		const refused = { text: "x", location: 1 };
+		const { tab } = await tabWith(
+			{ ...PRO, ...ON, readwiseBooks: { a: { title: "A", highlights: { "p:1": { want: refused, rejected: refused }, "p:2": { want: refused, rejected: refused } } } } },
+			keychainWith("rw-token"),
+		);
+		await answered(draw(tab), "Connected — 0 books, 0 highlights pushed. 2 highlights Readwise refused — they are retried when they change on the tablet.");
+	});
+
+	it.each([
+		[401, "The access token was not accepted — paste a new one from readwise.io/access_token."],
+		[403, "Your Readwise plan doesn't include API access."],
+		[500, "Readwise didn't answer."],
+	])("reads a %i as an error line, with no counts", async (status, text) => {
+		readwiseAnswering(status);
+		const { tab } = await tabWith({ ...PRO, ...ON, readwiseBooks: { b: { title: "B", highlights: { "p:3": { want: { text: "three", location: 2 } } } } } }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+		await answered(drawn, text);
+
+		expect(lineOf(drawn).style.color).toBe("var(--text-error)");
+	});
+
+	it("puts both integrations into the diagnostics, without a key or a token", async () => {
+		readwiseAnswering(204);
+		const zotero = { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", writeText: true, addRender: false };
+		const { tab } = await tabWith({ ...PRO, ...ON, zotero }, keychainWith("rw-secret-token"));
+		const drawn = draw(tab);
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		await buttons(drawn, "Report a problem")[0].click();
+		await settle();
+
+		expect(copied[0]).toContain("Zotero: zotero.org, write text on, add render off, 0 documents linked");
+		expect(copied[0]).toContain("Readwise: Pushing, 0 books, 0 highlights pushed, 0 documents waiting, 0 refused, last answer: ok");
+		expect(copied[0]).not.toContain(zotero.apiKey);
+		expect(copied[0]).not.toContain("rw-secret-token");
+	});
+
+	it("saves the Keychain entry's name, never the token, and asks again", async () => {
+		const asked = readwiseAnswering(204);
+		const app = keychainWith("rw-token");
+		const { plugin, tab } = await tabWith({ ...PRO, readwise: { push: true, tokenSecret: null } }, app);
+		const drawn = draw(tab);
+		expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+
+		await secret(drawn).pick("readwise-token");
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		expect(plugin.data.readwise).toEqual({ push: true, tokenSecret: "readwise-token" });
+		expect(JSON.stringify(plugin.saves)).not.toContain("rw-token");
+		expect(asked).toEqual(["https://readwise.io/api/v2/auth/"]);
+	});
+
+	it("shows the chosen entry, and forgets it when the choice is cleared", async () => {
+		readwiseAnswering(204);
+		const { plugin, tab } = await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+		expect(secret(drawn).value).toBe("readwise-token");
+		// Its probe done first, so it cannot land in the next test's network.
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		await secret(drawn).pick(null);
+		await settle();
+
+		expect(plugin.data.readwise).toEqual({ push: true, tokenSecret: null });
+		expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+	});
+
+	// Ticket 20 item 4: the next sync's backfill (Readwise spec §5) does the rest.
+	it("saves the switch and asks the line again", async () => {
+		const asked = readwiseAnswering(204);
+		const { plugin, tab } = await tabWith({ ...PRO, readwise: { push: false, tokenSecret: "readwise-token" } }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+
+		toggle(drawn, "Push highlights to Readwise").toggle(true);
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		expect(plugin.data.readwise).toEqual({ push: true, tokenSecret: "readwise-token" });
+		expect(plugin.saves).toHaveLength(1);
+		expect(asked).toEqual(["https://readwise.io/api/v2/auth/"]);
+	});
+
+	it("never lets a slow answer land on top of a newer one", async () => {
+		const answers: ((response: Response) => void)[] = [];
+		stubNetwork(async (input) =>
+			String(input).startsWith("https://readwise.io/") ? new Promise((resolve) => answers.push(resolve)) : new Response(null, { status: 404 }),
+		);
+		const { tab } = await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+		await vi.waitFor(() => expect(answers).toHaveLength(1));
+
+		// Off and on again: the line asks again while the first answer is still out.
+		toggle(drawn, "Push highlights to Readwise").toggle(false);
+		await settle();
+		toggle(drawn, "Push highlights to Readwise").toggle(true);
+		await vi.waitFor(() => expect(answers).toHaveLength(2));
+		answers[1](new Response(null, { status: 204 }));
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+		// The old probe's 401, with a sign of having been read: without it the test could end first and pass by default.
+		let read = false;
+		const rejected = new Response(null, { status: 401 });
+		answers[0](
+			new Proxy(rejected, {
+				get: (target, key) => {
+					if (key === "status") read = true;
+					const value: unknown = Reflect.get(target, key, target);
+					return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+				},
+			}),
+		);
+		await vi.waitFor(() => expect(read).toBe(true));
+		await settle();
+
+		expect(lineOf(drawn).text).toBe("Connected — 0 books, 0 highlights pushed.");
+	});
+
+	// Readwise spec §11 P4, and the way out the user chose for ticket 19's open point (C): once two
+	// computers were caught pushing to two accounts, neither of the two tokens clears it again, so the
+	// section offers to start over with this computer's.
+	describe("two computers on two accounts", () => {
+		async function clashed(fingerprintOf: "readwiseAccount" | "readwiseAccountBefore") {
+			const fingerprint = await tokenFingerprint("rw-token");
+			const other = fingerprint === "aaaaaaaaaaaa" ? "bbbbbbbbbbbb" : "aaaaaaaaaaaa";
+			return {
+				...PRO,
+				...ON,
+				readwiseAccount: fingerprintOf === "readwiseAccount" ? fingerprint : other,
+				readwiseAccountBefore: fingerprintOf === "readwiseAccount" ? other : fingerprint,
+				readwiseAccountClash: true,
+				readwiseRecording: true,
+				readwiseBooks: { a: { title: "A", bookId: 7, highlights: { "p:1": { pushed: { text: "one", location: 1 } } } } },
+			};
+		}
+
+		it.each(["readwiseAccount", "readwiseAccountBefore"] as const)("says so for a token that is the %s, without asking readwise.io", async (which) => {
+			const asked = readwiseAnswering(204);
+			const drawn = draw((await tabWith(await clashed(which), keychainWith("rw-token"))).tab);
+			await answered(drawn, "This computer and another one push to different Readwise accounts — use one account's token on both, then start over below.");
+
+			expect(lineOf(drawn).style.color).toBe("var(--text-error)");
+			expect(asked).toEqual([]);
+		});
+
+		it("starts over with this computer's token: the state goes, the next sync pushes everything", async () => {
+			readwiseAnswering(204);
+			const { plugin, tab } = await tabWith(await clashed("readwiseAccount"), keychainWith("rw-token"));
+			const drawn = draw(tab);
+			expect(row(drawn, "Start over with this computer's token").desc).toBe(
+				"Forgets what was pushed to Readwise; the next sync pushes every document again, into the account of this computer's token. " +
+					"Books you deleted in Readwise come back, and your margin notes go to your transcription backend again.",
+			);
+			expect(buttons(drawn, "Start over with this computer's token")[0].destructive).toBe(true);
+
+			buttons(drawn, "Start over with this computer's token")[0].click();
+			await settle();
+
+			for (const key of ["readwiseAccount", "readwiseAccountBefore", "readwiseAccountClash", "readwiseRecording"]) expect(plugin.data).not.toHaveProperty(key);
+			expect(plugin.data.readwiseBooks).toEqual({});
+			expect(plugin.saves).toHaveLength(1);
+			const after = onScreen(tab);
+			expect(rowNames(section(after, "Readwise"))).not.toContain("Start over with this computer's token");
+			await answered(after, "Connected — 0 books, 0 highlights pushed.");
+		});
+
+		it("offers no start-over on a computer without a token to start over with", async () => {
+			const drawn = draw((await tabWith(await clashed("readwiseAccount"))).tab);
+
+			expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+			expect(rowNames(section(drawn, "Readwise"))).not.toContain("Start over with this computer's token");
+		});
+
+		// The push holds the run lock and writes the state back when it ends: starting over under it would be undone.
+		it("does not start over while a sync runs", async () => {
+			readwiseAnswering(204);
+			const { plugin, tab } = await tabWith(await clashed("readwiseAccount"), keychainWith("rw-token"));
+			const drawn = draw(tab);
+			(plugin as unknown as { syncing: boolean }).syncing = true;
+
+			buttons(drawn, "Start over with this computer's token")[0].click();
+			await settle();
+
+			expect(takeNotices()).toEqual(["Wait for the sync to finish, then start over."]);
+			expect(plugin.data.readwiseAccountClash).toBe(true);
+			expect(plugin.saves).toHaveLength(0);
+		});
+
+		it("offers no start-over while nothing clashes", async () => {
+			readwiseAnswering(204);
+			const drawn = draw((await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"))).tab);
+
+			expect(rowNames(section(drawn, "Readwise"))).not.toContain("Start over with this computer's token");
+		});
 	});
 });
 
@@ -1345,8 +2260,23 @@ describe("the Tagged Sync Pro section", () => {
 		return rowNames(section(drawn, "Tagged Sync Pro")).includes("Licence key");
 	}
 	function moneyBack(drawn: Drawn[]): boolean {
-		return section(drawn, "Tagged Sync Pro").some((item) => item.kind === "note" && item.text.includes("no questions asked"));
+		return section(drawn, "Tagged Sync Pro").some((item) => item.kind === "row" && item.desc.includes("no questions asked"));
 	}
+
+	// A group has no loose text between rows, so the money-back note is the key row's second sentence
+	// (spec P11), and every row is ours to draw: its buttons change with the licence.
+	it("draws the status row and, until Pro is active, the key row with the money-back promise", async () => {
+		const free = await tabWith();
+		expect(rowsOf(free.tab, "Tagged Sync Pro")).toEqual([
+			{ name: "Not active", kind: "render", shown: true },
+			{ name: "Licence key", kind: "render", shown: true },
+		]);
+		expect(itemsOf(free.tab, "Tagged Sync Pro")[1]).toMatchObject({ desc: `Paste the key from your purchase page. ${MONEY_BACK_MESSAGE}`, aliases: ["license"] });
+		expect(section(draw(free.tab), "Tagged Sync Pro").filter((item) => item.kind === "note")).toEqual([]);
+
+		const bought = await tabWith({ licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(DAY_MS) } });
+		expect(rowsOf(bought.tab, "Tagged Sync Pro").map((item) => item.name)).toEqual(["Active"]);
+	});
 
 	it("offers the trial once, to somebody who has never had one", async () => {
 		const { tab } = await tabWith();
@@ -1485,15 +2415,16 @@ describe("the Tagged Sync Pro section", () => {
 		expect(keyField(drawn)).toBe(true);
 	});
 
-	// Characterisation, not endorsement. The trial button asks one question -- has a trial ever been
-	// started -- and asks it of the licence state alone, so it also stands beside "Deactivate this
-	// vault" for somebody who bought without trialling first, and beside "Buy" for a refunded buyer.
-	// Neither costs anything: the trial unlocks what a Pro licence already unlocks, and a refunded
-	// buyer has had the product either way. Recorded here so the next change to this row is a decision
-	// rather than a surprise.
-	it("offers the trial by the trial's own history, even to somebody who already has Pro", async () => {
+	// A running licence has nothing to try: the trial would unlock what it already unlocks, and the
+	// violet button stood beside "Deactivate this vault" as the row's main action. A refunded buyer keeps
+	// the offer, which costs nothing: they have had the product either way.
+	it("offers the trial unless a licence is running, whatever the trial's own history", async () => {
 		const bought = await tabWith({ licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(DAY_MS) } });
-		expect(pro(draw(bought.tab)).buttons).toEqual(["Start free trial", "Manage devices", "Deactivate this vault"]);
+		expect(pro(draw(bought.tab)).buttons).toEqual(["Manage devices", "Deactivate this vault"]);
+
+		// Not confirmed for a long while is still running: "Pro keeps working".
+		const stale = await tabWith({ licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(365 * DAY_MS) } });
+		expect(pro(draw(stale.tab)).buttons).toEqual(["Manage devices", "Deactivate this vault"]);
 
 		const refunded = await tabWith({
 			licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(DAY_MS), revokedAt: iso(DAY_MS) },
@@ -1554,11 +2485,17 @@ describe("the Tagged Sync Pro section", () => {
 	});
 });
 
-describe("the actions at the bottom", () => {
-	it("puts a Sync button on the settings screen, because the palette was the only way in", async () => {
+describe("help at the bottom", () => {
+	// Read when something has gone wrong, so last; *Sync now* went to the top (spec P1 (a)).
+	it("holds the diagnostics button and the feature links, and nothing else", async () => {
 		const { tab } = await tabWith({ deviceToken: "d" });
 
-		expect(buttons(draw(tab), "Sync now").map((button) => button.text)).toEqual(["Sync"]);
+		expect(rowsOf(tab, "Help")).toEqual([
+			{ name: "Report a problem", kind: "render", shown: true },
+			{ name: "Request a feature", kind: "text", shown: true },
+		]);
+		const links = row(draw(tab), "Request a feature").setting.descEl.children.map((link) => link.attributes.href);
+		expect(links).toEqual([expect.stringContaining("feature_request"), expect.stringContaining("label%3Aenhancement")]);
 	});
 
 	it("copies the diagnostics to the clipboard and says it did, without sending anything", async () => {

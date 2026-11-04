@@ -11,6 +11,7 @@ function page(overrides: Partial<DigestPage> = {}): DigestPage {
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
 	return {
 		id: "hl-9f21c4",
+		key: "page-1:1",
 		sentence: "Die Techniken gelten für alle aktuellen Claude-Modelle, sagt der Text.",
 		rects: [{ x: 72, y: 700, width: 228, height: 12 }],
 		tool: "marker",
@@ -24,7 +25,7 @@ function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
 }
 
 function note(overrides: Partial<DigestNote> = {}): DigestNote {
-	return { id: "nt-4c8a17", anchor: { kind: "page" }, text: "eine Randnotiz", region: null, rect: { x: 500, y: 600, width: 90, height: 40 }, top: 0, ...overrides };
+	return { id: "nt-4c8a17", key: "page-1:2", anchor: { kind: "page" }, text: "eine Randnotiz", region: null, rect: { x: 500, y: 600, width: 90, height: 40 }, top: 0, ...overrides };
 }
 
 describe("what kind of annotation an entry becomes", () => {

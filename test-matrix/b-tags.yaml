@@ -4,8 +4,9 @@
 # so its rows live here with `tier:` on them rather than being counted twice.
 #
 # The decision half of this group is `src/tag-routing-view.ts` (unit rows); the drawing half is the
-# settings tab in `src/main.ts` (vault rows). Both are asserted, because between them sits the slip
-# this seam was cut for: a plan can be right and still be drawn in the wrong order.
+# Tag routing group of the settings tab in `src/settings-tab.ts` (vault rows). Both are asserted,
+# because between them sits the slip this seam was cut for: a plan can be right and still be drawn in
+# the wrong order.
 #
 # A5 lives here too: it is metadata parsing on paper, but the failure it exists to prevent is
 # "Discover tags stops for the whole account" (issues #10 and #69), which is this group's story.
@@ -134,59 +135,134 @@
       file: src/remarkable-content.test.ts
       test: "the assumption the content patch rests on > still has rmapi-js reach content through `raw.getContent`"
 
+- feature: B6
+  name: Scan for tags in the settings
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: B6.1
+      scenario: The settings are opened before any scan has run in this Obsidian session
+      expect: The plan asks for a scan and offers nothing to map -- no pills, no filter, no removal note
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > asks for a scan before the first one, and offers nothing to map"
+
+    - id: B6.2
+      scenario: The shipped tab, before a scan, and the Scan button pressed
+      expect: One row, "Scan for tags", whose button scans; "Found 2 tag(s)." and the two tags as pills, alphabetical
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "scanning for tags > asks for a scan before the first one, and shows what it found as pills"
+
+    - id: B6.3
+      scenario: A scan is started from the heading's icon and the tablet takes its time
+      expect: Icon refresh-cw, "Scan for tags"; while it runs the icon is disabled and the row's button reads "Scanning…", disabled; afterwards both are free again and the session is closed
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "scanning for tags > scans from the heading icon too, and says it is scanning until the tablet answers"
+
+    - id: B6.4
+      scenario: A later scan fails
+      expect: '"Failed to discover tags: <reason>", and the tags the earlier scan found stay as pills -- a tablet that did not answer has not lost its tags'
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "scanning for tags > keeps what an earlier scan found when a scan fails, and says why"
+
+    - id: B6.5
+      scenario: The scan finds no tags at all
+      expect: The plan says so with a line of its own, so an empty tablet is not read as a broken scan
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > says a scan found nothing, so an empty tablet is not read as a broken scan"
+
+    - id: B6.6
+      scenario: The shipped tab after a scan of a tablet without tags
+      expect: '"No tags found" -- "Tag a notebook or page on your reMarkable, then scan again."'
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "scanning for tags > says when the tablet carries no tags, rather than showing nothing"
+
+    - id: B6.7
+      scenario: Tags are mapped, and nothing has been scanned in this Obsidian session yet
+      expect: The mapped rows, and the request for a scan beside them -- found tags are memory only, never data.json
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > keeps asking for a scan beside the mapped rows until one has run this session"
+
 - feature: B2
   name: Map a tag to a vault folder
   code: src/tag-routing-view.ts
   tier: free
   scenarios:
-    - id: B2.1
-      scenario: The settings tab is opened before any scan has run
-      expect: The section draws nothing at all -- no headings, no notices, no empty-state row
-      layer: unit
-      file: src/tag-routing-view.test.ts
-      test: "planTagRouting > draws nothing at all before a scan has found anything"
-
     - id: B2.2
-      scenario: A scan found one tag and the vault has folders
-      expect: One mappable row offering a placeholder, the vault root and every folder -- in that order
+      scenario: A scan found one tag and a free user has mapped nothing
+      expect: One pill, not capped, and no line above it; mapping it asks nothing of Polar
       layer: unit
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > offers the first tag a free user has found, with the whole vault to choose from"
+      test: "planTagRouting > offers the first tag a free user has found as a pill, without asking Polar"
 
     - id: B2.3
       scenario: A tag is mapped to the vault root
-      expect: The root reads as "Vault root" in the row as well as in the dropdown, never as "/"
+      expect: The folder reads as "Vault root", never as "/"
       layer: unit
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > calls the vault root by a name, in the row as well as the dropdown"
+      test: "planTagRouting > calls the vault root by a name"
 
     - id: B2.4
-      scenario: The vault has no folders at all
-      expect: The root is still offered, so a brand-new vault has one valid target instead of an empty dropdown
-      layer: unit
-      file: src/tag-routing-view.test.ts
-      test: "planTagRouting > offers only the root in an empty vault"
+      scenario: The vault has no folders at all, and a pill is clicked
+      expect: The picker still offers the vault root, so a brand-new vault has one valid target instead of an empty list
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > offers only the vault root in a vault without folders"
 
     - id: B2.5
-      scenario: Several tags are mapped and several more were discovered
-      expect: Mapped tags are sorted; unmapped ones stay in discovery order, which is the only order the user saw
+      scenario: Several tags are mapped and several more were found
+      expect: Mapped rows and pills are each alphabetical -- with 20 to 50 tags, a sorted cloud is the only one a reader can search by eye
       layer: unit
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > sorts the mapped tags and leaves the unmapped ones in the order they were discovered"
+      test: "planTagRouting > sorts mapped tags and pills alphabetically"
 
     - id: B2.6
       scenario: Every tag the scan found is already mapped
-      expect: No unmapped section is drawn, and nothing can ask the licence server because nothing can be added
+      expect: No pills and no line, and nothing can ask the licence server because nothing can be added
       layer: unit
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > draws no unmapped section when everything discovered is already mapped"
+      test: "planTagRouting > draws neither pills nor a line when every tag found is already mapped"
 
     - id: B2.7
-      scenario: The shipped settings tab draws that first mappable row
-      expect: A real dropdown carrying the placeholder, the root and the vault's folders
+      scenario: A free user clicks the pill of the first tag in the shipped tab
+      expect: 'A folder picker, "Choose a folder for <tag>", listing the vault root first and then every folder; choosing saves the mapping once and draws it as a row with the removal note under it'
       layer: vault
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > offers a folder dropdown for the first tag a free user maps"
+      test: "the free version's tag cap > maps the first tag a free user clicks to the folder chosen, without asking Polar"
+
+    - id: B2.8
+      scenario: The shipped tab, every tag found already mapped
+      expect: The mapped row and the removal note, and nothing else
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "scanning for tags > draws neither pills nor a line when every tag found is mapped"
+
+    - id: B2.9
+      scenario: The shipped tab draws a mapped tag
+      expect: The tag as a pill in place of the row's name, its folder ("Vault root" for the root) on a button
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "a mapped tag > shows the tag as a pill and its folder on a button"
+
+    - id: B2.10
+      scenario: Obsidian's settings search is asked about the Tag routing rows
+      expect: A mapped row is found by its folder as well, the found-tags row by the tags it shows; the removal note and the lines are not searched
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "a mapped tag > is found by its folder in the settings search, and the other rows are not searched"
+
+    - id: B2.11
+      scenario: A tag is mapped to the vault root and Obsidian's settings search is asked about its row
+      expect: The row is found by "Vault root", the name its folder button shows, not by "/"
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "a mapped tag > is found by the name its button shows for the vault root, not by '/'"
 
 - feature: B3
   name: Re-target a mapped tag
@@ -194,11 +270,11 @@
   tier: free
   scenarios:
     - id: B3.1
-      scenario: A Pro user with the licence re-check armed changes an existing tag's folder
-      expect: The new folder is saved and Polar is never called -- changing where a tag writes is not buying anything
+      scenario: A Pro user with the licence re-check armed changes an existing tag's folder on its folder button
+      expect: The picker opens for that tag, the new folder is saved and shown, and Polar is never called -- changing where a tag writes is not buying anything
       layer: vault
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > re-points a mapping the user already has without asking Polar -- that is not an add"
+      test: "a mapped tag > re-points a mapping the user already has without asking Polar -- that is not an add"
 
 - feature: B4
   name: Remove a mapping
@@ -213,37 +289,70 @@
       test: "planTagRouting > says nothing about removal when there is nothing to remove"
 
     - id: B4.2
-      scenario: One tag is mapped and another was discovered
-      expect: Only the mapped row carries Remove; an unmapped row has no button at all
+      scenario: The × of a mapped tag is clicked
+      expect: The mapping is gone and saved at once, with no confirmation, and the tag is back among the pills
       layer: vault
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > offers Remove on a mapped tag only -- there is nothing to remove from an unmapped one"
+      test: "a mapped tag > is removed by its ×, at once and without a question"
 
 - feature: B5
-  name: Missing folder stays selectable
+  name: Missing folder stays mapped
   code: src/tag-routing-view.ts
   tier: free
   scenarios:
     - id: B5.1
       scenario: The folder a tag is mapped to was renamed or deleted in the vault
-      expect: It is still an option, labelled "(missing)", and the row still reads as that folder
+      expect: The mapping stays, marked missing, and its label says "(missing)" after the folder it still points at
       layer: unit
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > keeps a mapped folder selectable after it is renamed away, and labels it"
+      test: "planTagRouting > labels a mapped folder that is gone, and keeps the mapping"
 
     - id: B5.2
       scenario: The folder a tag is mapped to is still there
-      expect: No extra option and no "(missing)" label -- the marker means something because it is not always on
+      expect: No "(missing)" label -- the marker means something because it is not always on
       layer: unit
       file: src/tag-routing-view.test.ts
       test: "planTagRouting > does not label a folder that is still there"
 
     - id: B5.3
       scenario: The shipped settings tab draws that row
-      expect: The dropdown shows the missing folder as its value rather than silently selecting something else
+      expect: The folder button reads "<folder> (missing)" and carries the warning-colour class
       layer: vault
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > keeps a mapped-but-missing folder selectable, labelled (missing)"
+      test: "a mapped tag > names a folder that is gone on its button, in the warning colour"
+
+- feature: B7
+  name: Filter many tags
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: B7.1
+      scenario: The plan counts the tags, eleven and twelve, a mapped one found by the scan, and one it did not find
+      expect: The filter from twelve, counting mapped and found tags as one set
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > offers the filter from twelve tags, counting a mapped tag the scan found once"
+
+    - id: B7.2
+      scenario: The shipped tab with eleven tags, and a scan in the open tab that brings the twelfth
+      expect: 'The group''s own search box, "Filter tags", is there from the first draw -- Obsidian builds a header only then -- and shown (tagged-sync-filter-on on the group) only from twelve'
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the filter > is shown from twelve tags, also when a scan in the open tab brings the twelfth"
+
+    - id: B7.3
+      scenario: A query is typed, the tab is redrawn, and the query is cleared
+      expect: Mapped rows stay when tag or folder holds the query, pills when the tag does, case aside; the removal note and the pill row stay; the query survives the redraw; cleared, every pill is back
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the filter > narrows mapped rows by tag or folder and pills by tag, keeps the notes, and survives a redraw"
+
+    - id: B7.4
+      scenario: One mapped row's folder holds the query and its tag does not, then the other way round
+      expect: Each leg keeps its row alone -- folder only, then tag only
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the filter > keeps a mapped row by its folder alone, and by its tag alone"
 
 - feature: B13
   name: Free tag cap (1 mapped tag) / Pro lifts it
@@ -251,24 +360,32 @@
   tier: free
   scenarios:
     - id: B13.1
-      scenario: A free user has one mapped tag and the scan found a second
-      expect: The second row renders as "Not synced." with the reason above it -- a readable explanation, not a disabled control
+      scenario: A free user has one mapped tag and the scan found a second; the faded pill is clicked
+      expect: '"One tag in the free version" with the cap sentence above the pills, the pill faded; clicking it opens no picker and saves nothing, says "Syncing <tag> needs Tagged Sync Pro." and its See Pro button scrolls to the Pro group'
       layer: vault
       tier: free
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > refuses the second tag: no dropdown, a read-only row, and the cap sentence above it"
+      test: "the free version's tag cap > refuses a second tag in place: a faded pill, the cap sentence above it, and a way to Pro"
+
+    - id: B13.17
+      scenario: Two faded pills are clicked one after the other, then the tab is redrawn
+      expect: The line names the pill clicked last; after the redraw it is gone, and nothing was saved
+      layer: vault
+      tier: free
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > says it for the capped pill clicked last, and forgets it on the next redraw"
 
     - id: B13.2
       scenario: A user whose licence ended still has three tags mapped. The sync engine is never told the entitlement, so what is mapped is what syncs
-      expect: All three rows are drawn mapped, each keeping its dropdown and its Remove button -- the cap never unmaps, because unmapping would orphan the row and the folder would stop updating with nothing said
+      expect: All three are mapped rows and the new tag a capped pill -- the cap never unmaps, because unmapping would orphan the row and the folder would stop updating with nothing said
       layer: unit
       tier: free
       file: src/tag-routing-view.test.ts
       test: "planTagRouting > never revokes a mapping the user already has, however far past the cap"
 
     - id: B13.3
-      scenario: A user with a valid licence maps a second tag
-      expect: It is offered and mapped. The cap is lifted, not raised
+      scenario: A user with a valid licence and one mapped tag sees a second
+      expect: Its pill is not faded and no cap sentence is drawn. The cap is lifted, not raised
       layer: vault
       tier: pro
       file: src/tag-routing-section.test.ts
@@ -276,14 +393,14 @@
 
     - id: B13.4
       scenario: A licence has ended while three tags are mapped, and the tab is drawn again
-      expect: The mappings are never revoked or deleted; every one of them keeps its dropdown and Remove button
+      expect: The mappings are never revoked or deleted; every one keeps its folder button and its × ("Remove mapping")
       layer: vault
       tier: pro
       file: src/tag-routing-section.test.ts
       test: "the free version's tag cap > never revokes a mapping the user already has, even past the cap"
 
     - id: B13.5
-      scenario: The licence server is unreachable when the tag dropdown changes
+      scenario: The licence server is unreachable when a folder is chosen for a further tag
       expect: Pro is kept and nothing is said -- an unreachable Polar is not a verdict
       layer: unit
       tier: pro
@@ -292,11 +409,11 @@
 
     - id: B13.6
       scenario: The plan is asked for that same refused second tag
-      expect: A capped row with no options, and the cap sentence placed above the rows it explains
+      expect: Capped pills, and the cap line, which is drawn above the pills it explains
       layer: unit
       tier: free
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > refuses the second tag, and says why above the rows it refuses"
+      test: "planTagRouting > caps every further pill for a free user, and says why above them"
 
     - id: B13.7
       scenario: The limit is read for a free user
@@ -324,15 +441,15 @@
 
     - id: B13.10
       scenario: The plan is asked for a second tag with a valid licence
-      expect: A mappable row with the full folder list
+      expect: A pill that is not capped, no line, and the licence re-check armed
       layer: unit
       tier: pro
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > lets a paid user map the second tag"
+      test: "planTagRouting > lets a paid user map the second tag, and re-checks the licence when they do"
 
     - id: B13.11
       scenario: The same, during a trial
-      expect: A mappable row. A trial is Pro until it ends
+      expect: A pill that is not capped. A trial is Pro until it ends
       layer: unit
       tier: pro
       file: src/tag-routing-view.test.ts
@@ -346,16 +463,8 @@
       file: src/tag-routing-view.test.ts
       test: "planTagRouting > asks for a re-check only past the free limit, never at it"
 
-    - id: B13.13
-      scenario: A free user picks a folder for their first and only tag
-      expect: It is saved, and Polar is never called. A free user never talks to the licence server
-      layer: vault
-      tier: free
-      file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > makes no licence call for the very first mapping -- a free user never talks to Polar"
-
     - id: B13.14
-      scenario: A licence ends between the settings tab being drawn and a further tag's folder being picked
+      scenario: A licence ends between the settings tab being drawn and a folder being chosen for a further tag
       expect: The licence is re-checked at the moment it is used, the mapping is refused, and nothing is saved
       layer: vault
       tier: pro
@@ -369,3 +478,11 @@
       tier: pro
       file: src/tag-routing-section.test.ts
       test: "the free version's tag cap > writes the mapping when that live re-check still says Pro"
+
+    - id: B13.16
+      scenario: The cap sentence under "One tag in the free version"
+      expect: '"The free version syncs one tag. Tagged Sync Pro syncs every tag." -- the faded pills already show what is refused'
+      layer: unit
+      tier: free
+      file: src/licence-messages.test.ts
+      test: "the shipped text this edits > says what the free version syncs and what Pro syncs, in the tag cap's sentence"

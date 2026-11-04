@@ -16,10 +16,14 @@ import { Platform } from "obsidian";
 import { digestId, NOT_TRANSCRIBED } from "./digest-builder";
 import { md5Hex } from "./file-md5";
 import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
+import { readEpubBook } from "./epub-text";
+import type { BookSources } from "./readwise-book";
+import type { ReadwiseRecorder, ReadwiseUnit } from "./readwise-push";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
 	invalidateRenders,
+	invalidateRows,
 	LEGACY_OCR_RETRY,
 	markLegacyOcrLosses,
 	pendingOcrRetries,
@@ -30,6 +34,8 @@ import {
 	reTranscribeAll,
 	reTranscribeNote,
 	runSync,
+	settleMarginNotesChoice,
+	settleZoteroSwitches,
 	type SyncApi,
 	type SyncIndex,
 	type SyncIndexRow,
@@ -62,6 +68,13 @@ vi.mock("./scene-text", async (importOriginal) => {
 vi.mock("./rm-parser", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./rm-parser")>();
 	return { ...actual, parseRmV6: vi.fn(actual.parseRmV6) };
+});
+
+// A book's OPF is read from a real archive in `epub-text.test.ts`. Here it is whatever a test says, so a
+// fixture need not be a zip; it delegates to the real reader until a test says otherwise.
+vi.mock("./epub-text", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./epub-text")>();
+	return { ...actual, readEpubBook: vi.fn(actual.readEpubBook) };
 });
 
 // Laying the layer fails only on a PDF pdf-lib cannot load, and the sync renders its PDFs itself. The
@@ -3776,6 +3789,78 @@ describe("the text layer (searchable PDF)", () => {
 			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1-page-a.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
 		});
 
+		describe("a PDF whose margin notes are kept as a digest", () => {
+			const PDF_KEY = notebookSyncKey("doc-1", "sync");
+			const book = async () =>
+				fakeApi({
+					rootHash: "root-20-digest",
+					entries: [documentEntry({ fileType: "pdf", visibleName: "Book", tags: [{ name: "sync", timestamp: 0 }] })],
+					contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]) }) },
+					sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+					pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+				});
+
+			async function syncedBook() {
+				const first = { ...baseDeps(await book(), { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+				const { index } = await runSync(first, EMPTY_SYNC_INDEX);
+				expect(await first.noteStore.read(index.rows[PDF_KEY].notePath)).toContain("## Digest");
+				return { noteStore: first.noteStore, index, path: index.rows[PDF_KEY].notePath };
+			}
+
+			const rerun = async (noteStore: NoteStore) => {
+				const ocrBackend = fakeOcrBackend({ status: "ok", text: "read again", confidence: 88 });
+				return { deps: { api: await book(), noteStore, attachmentStore: fakeAttachmentStore(), ocrBackend }, ocrBackend };
+			};
+
+			// The transcript region refuses a PDF's digest, so reading its pages first paid for a certain no.
+			it("sends no page in a whole-vault run, and hands the document back to be read by a sync", async () => {
+				const { noteStore, index } = await syncedBook();
+				const { deps, ocrBackend } = await rerun(noteStore);
+				const totals: number[] = [];
+
+				const result = await reTranscribeAll({ ...deps, onProgress: (progress) => progress.phase === "working" && totals.push(progress.total) }, index);
+
+				expect(vi.mocked(ocrBackend.recognize)).not.toHaveBeenCalled();
+				expect(result.updated).toBe(0);
+				expect(result.digestRowKeys).toEqual([PDF_KEY]);
+				// The bar counts what the run will do, and it will not read this PDF's pages.
+				expect(totals).toEqual([]);
+			});
+
+			// No note to read means no digest to keep, so it is read like any other.
+			it("counts the pages of a note gone from the vault", async () => {
+				const { noteStore, index } = await syncedBook();
+				const { deps } = await rerun(noteStore);
+				vi.mocked(noteStore.read).mockResolvedValue(null);
+				const totals: number[] = [];
+
+				await reTranscribeAll({ ...deps, onProgress: (progress) => progress.phase === "working" && totals.push(progress.total) }, index);
+
+				expect(totals.length).toBeGreaterThan(0);
+			});
+
+			// A sync never overwrites a note edited by hand, so reading its margin notes would pay for nothing.
+			it("does not hand back a note edited by hand", async () => {
+				const { noteStore, index, path } = await syncedBook();
+				await noteStore.write(path, (await noteStore.read(path))!.replace("## Digest", "## Digest\ncorrected by hand"));
+				const { deps } = await rerun(noteStore);
+
+				expect((await reTranscribeAll(deps, index)).digestRowKeys).toEqual([]);
+			});
+
+			it("says so for one note, untouched or edited by hand", async () => {
+				const { noteStore, index, path } = await syncedBook();
+				const { deps, ocrBackend } = await rerun(noteStore);
+
+				expect((await reTranscribeNote(deps, index.rows[PDF_KEY], index)).outcome).toBe("pdf-digest");
+
+				await noteStore.write(path, (await noteStore.read(path))!.replace("## Digest", "## Digest\ncorrected by hand"));
+
+				expect((await reTranscribeNote(deps, index.rows[PDF_KEY], index)).outcome).toBe("pdf-digest-edited");
+				expect(vi.mocked(ocrBackend.recognize)).not.toHaveBeenCalled();
+			});
+		});
+
 		// An annotated PDF or a book gets no layer in 1.9.0 (spec §2.3), so there is nothing to write again.
 		it("writes no render for an annotated PDF", async () => {
 			const book = async () =>
@@ -3795,6 +3880,357 @@ describe("the text layer (searchable PDF)", () => {
 			expect(updated).toBe(1);
 			expect(vi.mocked(deps.attachmentStore.writeBinary)).not.toHaveBeenCalled();
 		});
+	});
+});
+
+// Since a current note stays shut when its document opens for another one, nothing else would ever repair it.
+describe("a unit that failed to render", () => {
+	const document = async (rootHash: string, hash: string, tagged: { tags?: { name: string; timestamp: number }[]; pageTags?: { name: string; timestamp: number; pageId: string }[] }) =>
+		fakeApi({
+			rootHash,
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Book", hash, tags: tagged.tags ?? [] })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]), pageTags: tagged.pageTags ?? [] }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+			pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+		});
+
+	it.each([
+		["a document tag", { tags: [{ name: "sync", timestamp: 0 }] }, notebookSyncKey("doc-1", "sync")],
+		["a page tag", { pageTags: [{ name: "sync", timestamp: 0, pageId: "p1" }] }, pageSyncKey("doc-1", "p1", "sync")],
+	])("under %s is tried again on the next sync", async (_, tagged, key) => {
+		const deps = baseDeps(await document("root-1", "hash-1", tagged), { sync: "Target" });
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const failing = await document("root-2", "hash-2", tagged);
+		failing.raw.getHash.mockRejectedValue(new Error("page fetch failed"));
+
+		const broken = await runSync({ ...deps, api: failing }, index);
+		expect(broken.notesWritten).toBe(0);
+		expect(broken.index.rows[key].entryHash).toBe("hash-1");
+
+		const healed = await runSync({ ...deps, api: await document("root-3", "hash-2", tagged) }, broken.index);
+		expect(healed.notesWritten).toBe(1);
+		expect(healed.index.rows[key].entryHash).toBe("hash-2");
+	});
+});
+
+describe("a digest read again with nothing changed on the tablet", () => {
+	const KEY = notebookSyncKey("doc-1", "sync");
+	const OTHER_KEY = notebookSyncKey("doc-1", "other");
+	const READ = { status: "ok", text: "my good reading", confidence: 88 } as const;
+	const DEAD = { status: "failed", text: "", confidence: null } as const;
+
+	const book = async (hash = "hash-1", tags = [{ name: "sync", timestamp: 0 }]) =>
+		fakeApi({
+			rootHash: `root-${hash}`,
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Book", hash, tags })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]) }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+			pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+		});
+
+	async function synced() {
+		const deps = { ...baseDeps(await book(), { sync: "Target" }), ocrBackend: fakeOcrBackend(READ) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const path = index.rows[KEY].notePath;
+		const before = (await deps.noteStore.read(path))!;
+		expect(before).toContain("my good reading");
+		return { deps, index, path, before };
+	}
+
+	// The backend was off, or refused: nothing about the note is better for trying, and a sync must not
+	// trade a good reading for "could not be transcribed".
+	it.each(["failed", "unavailable"] as const)("keeps the note as it was when the reading comes back %s", async (status) => {
+		const { deps, index, path, before } = await synced();
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend({ ...DEAD, status }) }, invalidateRows(index, [KEY]));
+
+		expect(await deps.noteStore.read(path)).toBe(before);
+		expect(again.notesWritten).toBe(0);
+		expect(again.index.rows[KEY].renderVersion).toBe(RENDER_VERSION);
+		expect(again.index.rows[KEY].ocrRetry?.with).toBeDefined();
+	});
+
+	// A refusal repeats with the same backend, and on a paid one it would bill every sync.
+	it("does not try again with the same backend", async () => {
+		const { deps, index } = await synced();
+		const dead = fakeOcrBackend(DEAD);
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: dead }, invalidateRows(index, [KEY]));
+		vi.mocked(dead.recognize).mockClear();
+
+		await runSync({ ...deps, api: await book(), ocrBackend: dead }, again.index);
+
+		expect(vi.mocked(dead.recognize)).not.toHaveBeenCalled();
+	});
+
+	it("reads it again under another backend, and writes that", async () => {
+		const { deps, index, path } = await synced();
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		await runSync({ ...deps, api: await book(), ocrBackend: { ...fakeOcrBackend({ ...READ, text: "a better reading" }), fingerprint: "better" } }, again.index);
+
+		expect(await deps.noteStore.read(path)).toContain("a better reading");
+	});
+
+	// The tablet changed, so the old note describes a page that is gone: it has to be written.
+	it("writes the note when the tablet did change", async () => {
+		const { deps, index, path } = await synced();
+
+		await runSync({ ...deps, api: await book("hash-2"), ocrBackend: fakeOcrBackend(DEAD) }, index);
+
+		expect(await deps.noteStore.read(path)).toContain(NOT_TRANSCRIBED);
+	});
+
+	it("keeps the note when the digest build throws", async () => {
+		const { deps, index, path, before } = await synced();
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ) }, invalidateRows(index, [KEY]));
+
+		expect(await deps.noteStore.read(path)).toBe(before);
+		expect(again.notesWritten).toBe(0);
+	});
+
+	// The build said nothing about the note, so what made it due still stands.
+	it("tries again on the next sync after the digest build threw, when no retry was waiting", async () => {
+		const { deps, index } = await synced();
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ) }, invalidateRows(index, [KEY]));
+		expect(again.index.rows[KEY].ocrRetry).toBeUndefined();
+
+		const next = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ) }, again.index);
+
+		expect(next.notesWritten).toBe(1);
+	});
+
+	it.each([
+		["failed", "failedOcrUnits"],
+		["unavailable", "unavailableOcrUnits"],
+	] as const)("reports a note kept for a reading that came back %s", async (status, count) => {
+		const { deps, index } = await synced();
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend({ ...DEAD, status }) }, invalidateRows(index, [KEY]));
+
+		expect(again[count]).toBe(1);
+	});
+
+	// A backfill, or *Push to Readwise again*, makes the note due for its record. A refusal is not tried
+	// again under the same backend, so the highlights would otherwise stay out of Readwise for good.
+	it("still records a kept note for Readwise, named without the Zotero pass", async () => {
+		const { deps, index } = await synced();
+		const units: ReadwiseUnit[] = [];
+		const readwise: ReadwiseRecorder = {
+			record: async (unit) => {
+				units.push(unit);
+			},
+		};
+
+		await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD), readwise }, invalidateRows(index, [KEY]));
+
+		expect(units).toHaveLength(1);
+		expect(units[0]).toMatchObject({ docId: "doc-1", scope: "document" });
+		expect(units[0].embedPath).toMatch(/\/doc-1\.pdf$/);
+		expect(await units[0].sources()).toEqual({ visibleName: "Book" });
+	});
+
+	it("records nothing for a note kept because the digest build threw", async () => {
+		const { deps, index } = await synced();
+		const record = vi.fn(async () => {});
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
+
+		await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ), readwise: { record } }, invalidateRows(index, [KEY]));
+
+		expect(record).not.toHaveBeenCalled();
+	});
+
+	// The note belongs somewhere else now, so keeping it would leave it in the wrong place.
+	it("writes the note when its tag now goes to another folder", async () => {
+		const { deps, index } = await synced();
+		const moved = baseDeps(await book(), { sync: "Elsewhere" });
+
+		const again = await runSync({ ...moved, noteStore: deps.noteStore, attachmentStore: deps.attachmentStore, ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		expect(again.notesWritten).toBe(1);
+		expect(again.index.rows[KEY].notePath).toMatch(/^Elsewhere\//);
+	});
+
+	it("writes the note when its tag was renamed", async () => {
+		const { deps, index } = await synced();
+		const renamed = baseDeps(await book("hash-1", [{ name: "other", timestamp: 0 }]), { sync: "Target", other: "Target" });
+
+		const again = await runSync({ ...renamed, noteStore: deps.noteStore, attachmentStore: deps.attachmentStore, ocrBackend: fakeOcrBackend(DEAD) }, index);
+
+		expect(again.notesWritten).toBe(1);
+		expect(again.index.rows[OTHER_KEY]).toBeDefined();
+	});
+
+	it("brings back a note deleted from the vault, whatever the reading", async () => {
+		const { deps, index } = await synced();
+		vi.mocked(deps.noteStore.read).mockResolvedValue(null);
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		expect(again.notesWritten).toBe(1);
+	});
+
+	it("keeps a page-tagged note the same way", async () => {
+		const tagged = async () =>
+			fakeApi({
+				rootHash: "root-page",
+				entries: [documentEntry({ fileType: "pdf", visibleName: "Book", hash: "hash-1", tags: [] })],
+				contentById: {
+					"doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]), pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }] }),
+				},
+				sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+				pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+			});
+		const PAGE_KEY = pageSyncKey("doc-1", "p1", "todo");
+		const deps = { ...baseDeps(await tagged(), { todo: "Target" }), ocrBackend: fakeOcrBackend(READ) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const path = index.rows[PAGE_KEY].notePath;
+		const before = await deps.noteStore.read(path);
+		expect(before).toContain("my good reading");
+
+		const again = await runSync({ ...deps, api: await tagged(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [PAGE_KEY]));
+
+		expect(await deps.noteStore.read(path)).toBe(before);
+		expect(again.index.rows[PAGE_KEY].renderVersion).toBe(RENDER_VERSION);
+	});
+
+	// The note that loses nothing by being written: an earlier failure read better this time, or the same.
+	it("writes the note when it was unread before as well", async () => {
+		const deps = { ...baseDeps(await book(), { sync: "Target" }), ocrBackend: fakeOcrBackend(DEAD) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		expect(again.notesWritten).toBe(1);
+	});
+
+	// A hand-edited note keeps its row stale for good, so the document reopens on every sync. That must
+	// not rewrite its other notes each time: on a paid backend, a bill on every sync.
+	it("does not read a sibling again on every sync because a hand-edited note keeps the document open", async () => {
+		const tags = [{ name: "sync", timestamp: 0 }, { name: "other", timestamp: 0 }];
+		const deps = { ...baseDeps(await book("hash-1", tags), { sync: "Target", other: "Other" }), ocrBackend: fakeOcrBackend(READ) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const path = index.rows[KEY].notePath;
+		await deps.noteStore.write(path, (await deps.noteStore.read(path))!.replace("## Digest", "## Digest\ncorrected by hand"));
+		const counting = fakeOcrBackend(READ);
+
+		const first = await runSync({ ...deps, api: await book("hash-1", tags), ocrBackend: counting }, invalidateRenders(index));
+		expect(first.index.rows[OTHER_KEY].renderVersion).toBe(RENDER_VERSION);
+		vi.mocked(counting.recognize).mockClear();
+
+		const second = await runSync({ ...deps, api: await book("hash-1", tags), ocrBackend: counting }, first.index);
+
+		expect(vi.mocked(counting.recognize)).not.toHaveBeenCalled();
+		expect(second.notesWritten).toBe(0);
+	});
+});
+
+describe("invalidateRows", () => {
+	// A whole document would take a hand-edited sibling with it: a sync skips that row and never restores
+	// its version, so the document would reopen, and its other notes be read again, on every sync.
+	it("makes only the named rows due, not the rest of their document", () => {
+		const index = {
+			...EMPTY_SYNC_INDEX,
+			rows: {
+				mine: { status: "active", docId: "d", renderVersion: 7 } as SyncIndexRow,
+				sibling: { status: "active", docId: "d", renderVersion: 7 } as SyncIndexRow,
+			},
+		};
+
+		const { rows } = invalidateRows(index, ["mine", "gone"]);
+
+		expect(rows.mine.renderVersion).toBeUndefined();
+		expect(rows.sibling.renderVersion).toBe(7);
+		expect(Object.keys(rows)).toEqual(["mine", "sibling"]);
+	});
+});
+
+describe("settleMarginNotesChoice", () => {
+	const rows = (): SyncIndex => ({ ...EMPTY_SYNC_INDEX, rows: { a: { status: "active", docId: "d", renderVersion: 7 } as SyncIndexRow } });
+
+	it("makes every note due when the switch differs from what the last sync ran with", () => {
+		const data = { syncIndex: rows(), marginNotes: true, marginNotesSynced: false };
+
+		expect(settleMarginNotesChoice(data)).toBe(true);
+
+		expect(data.syncIndex.rows.a.renderVersion).toBeUndefined();
+		expect(data.marginNotesSynced).toBe(true);
+	});
+
+	// The switch knocked off and straight back on: the notes already say what the switch says, and on a
+	// paid backend reading every margin note again would be a bill for a slip of the finger.
+	it("does nothing when the switch is back where the last sync left it", () => {
+		const data = { syncIndex: rows(), marginNotes: true, marginNotesSynced: true };
+
+		expect(settleMarginNotesChoice(data)).toBe(false);
+
+		expect(data.syncIndex.rows.a.renderVersion).toBe(7);
+	});
+
+	it("only remembers the switch on a vault that never recorded it", () => {
+		const data: { syncIndex: SyncIndex; marginNotes: boolean; marginNotesSynced?: boolean } = { syncIndex: rows(), marginNotes: true };
+
+		expect(settleMarginNotesChoice(data)).toBe(true);
+
+		expect(data.syncIndex.rows.a.renderVersion).toBe(7);
+		expect(data.marginNotesSynced).toBe(true);
+	});
+});
+
+describe("settleZoteroSwitches", () => {
+	const rows = (): SyncIndex => ({
+		...EMPTY_SYNC_INDEX,
+		rows: {
+			linked: { status: "active", docId: "linked-doc", renderVersion: 7 } as SyncIndexRow,
+			other: { status: "active", docId: "other-doc", renderVersion: 7 } as SyncIndexRow,
+		},
+	});
+	const LINKED = ["linked-doc"];
+
+	it("makes the linked documents due when a switch went on since the last sync", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: true, addRender: false }, zoteroSwitchesSynced: { writeText: false, addRender: false } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(true);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBeUndefined();
+		expect(data.syncIndex.rows.other.renderVersion).toBe(7);
+		expect(data.zoteroSwitchesSynced).toEqual({ writeText: true, addRender: false });
+	});
+
+	it("does the same when the render switch went on", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: true, addRender: true }, zoteroSwitchesSynced: { writeText: true, addRender: false } };
+
+		settleZoteroSwitches(data, LINKED);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBeUndefined();
+	});
+
+	it("does nothing when the switches are back where the last sync left them", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: true, addRender: false }, zoteroSwitchesSynced: { writeText: true, addRender: false } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(false);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBe(7);
+	});
+
+	it("only records a switch that went off", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: false, addRender: false }, zoteroSwitchesSynced: { writeText: true, addRender: false } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(true);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBe(7);
+		expect(data.zoteroSwitchesSynced).toEqual({ writeText: false, addRender: false });
+	});
+
+	it("only remembers the switches on a vault that never recorded them", () => {
+		const data: Parameters<typeof settleZoteroSwitches>[0] = { syncIndex: rows(), zotero: { writeText: true, addRender: true } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(true);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBe(7);
+		expect(data.zoteroSwitchesSynced).toEqual({ writeText: true, addRender: true });
 	});
 });
 
@@ -6364,5 +6800,197 @@ describe("the Zotero half of a sync (spec §3.4)", () => {
 		expect(note).not.toContain("zotero://select");
 		expect(note).toContain("zotero-key: ITEM1");
 		expect(blockHashOf(extractManagedBlock(note)!)).toBe(result.index.rows[notebookSyncKey("doc-1", "sync")].blockHash);
+	});
+});
+
+describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
+	/** A recorder that keeps every unit it is handed, with the book sources it was offered resolved. */
+	function fakeRecorder() {
+		const seen: { unit: ReadwiseUnit; sources: BookSources }[] = [];
+		const readwise: ReadwiseRecorder = {
+			record: async (unit) => {
+				seen.push({ unit, sources: await unit.sources() });
+			},
+		};
+		return { readwise, seen };
+	}
+
+	type Tag = { name: string; timestamp: number };
+
+	async function pdfDocument(rootHash: string, opts: { fileType?: "pdf" | "epub"; pageTags?: (Tag & { pageId: string })[]; hash?: string } = {}) {
+		const fileType = opts.fileType ?? "pdf";
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash: opts.hash ?? "hash-1", fileType, visibleName: "Prompting", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: {
+				"doc-1": documentContent({ fileType, pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]), pageTags: opts.pageTags ?? [] }),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p0: "anno-hash", p1: "anno-hash-2" } },
+		});
+	}
+
+	/** A book: the rendered PDF, and beside it the `.epub` the tablet keeps, which `fetch` answers for. */
+	async function epubDocument(rootHash: string, fetch: () => Promise<Uint8Array>) {
+		const api = await pdfDocument(rootHash, { fileType: "epub" });
+		const listed = api.raw.getEntries.getMockImplementation() as (ref: ItemRef) => Promise<{ entries: object[] }>;
+		api.raw.getEntries.mockImplementation(async (ref: ItemRef) => {
+			const files = await listed(ref);
+			return { entries: [...files.entries, { id: "doc-1.epub", hash: "epub-hash", type: 0, subfiles: 0, size: 0 }] };
+		});
+		api.raw.getHash.mockImplementation(async (ref: ItemRef) => (ref.id === "doc-1.epub" ? await fetch() : PAGE_BYTES));
+		return api;
+	}
+
+	const ALICE = { text: "", chapters: [], title: "Alice", authors: ["Lewis Carroll"] };
+
+	it("records a PDF's whole-document unit after its note is written, numbered by the PDF's own pages", async () => {
+		const deps = baseDeps(await pdfDocument("root-rw-pdf"), { sync: "Target" });
+		const seen: { unit: ReadwiseUnit; onDisk: string | null }[] = [];
+		const readwise: ReadwiseRecorder = {
+			record: async (unit) => {
+				seen.push({ unit, onDisk: await deps.noteStore.read("Target/Prompting.md") });
+			},
+		};
+
+		await runSync({ ...deps, readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0].unit).toMatchObject({ docId: "doc-1", scope: "document", pageOrder: null, marginNotes: true });
+		expect(seen[0].unit.pages.map((page) => page.embedPage)).toEqual([1, 2]);
+		expect(seen[0].unit.embedPath).toMatch(/\/doc-1\.pdf$/);
+		expect(seen[0].onDisk).toContain("## Digest");
+	});
+
+	it("records a page-tag unit for its one page, beside the document tag's unit of the same document", async () => {
+		const api = await pdfDocument("root-rw-page", { pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }] });
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(api, { sync: "Target", todo: "Todo" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => [unit.docId, unit.scope])).toEqual([
+			["doc-1", "document"],
+			["doc-1", { pageId: "p1" }],
+		]);
+		expect(seen[1].unit.embedPath).toMatch(/\/doc-1-p1\.pdf$/);
+	});
+
+	it("records nothing a failed digest build could speak for", async () => {
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("pdf.js went away"));
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument("root-rw-failed"), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => [unit.scope, unit.pages])).toEqual([["none", []]]);
+	});
+
+	it("hands over the vault's margin-notes setting, which the digest was built under", async () => {
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument("root-rw-margin"), { sync: "Target" }), marginNotes: false, readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => unit.marginNotes)).toEqual([false]);
+	});
+
+	it("records a notebook's typed pages, numbered by the notebook's page order", async () => {
+		vi.mocked(isDocumentText).mockReturnValueOnce(false).mockReturnValueOnce(true).mockReturnValueOnce(false);
+		const api = fakeApi({
+			rootHash: "root-rw-typed",
+			entries: [documentEntry({ visibleName: "Article", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a", "page-b", "page-c"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a", "page-b": "hash-b", "page-c": "hash-c" } },
+		});
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0].unit).toMatchObject({ scope: "document", pageOrder: ["page-a", "page-b", "page-c"], category: "articles" });
+		expect(seen[0].unit.pages).toHaveLength(1);
+		expect(seen[0].sources).toEqual({ visibleName: "Article" });
+	});
+
+	// Spec §4.2: a whole-document unit speaks for every record of the book -- also those of a page whose
+	// typed text has since become handwriting. A notebook with no typed page left has none to push.
+	it("records a handwritten notebook as having nothing, so typed pages it no longer has are cleaned up", async () => {
+		const api = fakeApi({
+			rootHash: "root-rw-notebook",
+			entries: [documentEntry({ tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => [unit.scope, unit.pages])).toEqual([["document", []]]);
+	});
+
+	it("records nothing for a note frozen by a hand edit", async () => {
+		const first = baseDeps(await pdfDocument("root-rw-frozen-1"), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const path = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+		await first.noteStore.write(path, (await first.noteStore.read(path))!.replace("## Digest", "## Digest\nby hand"));
+		const { readwise, seen } = fakeRecorder();
+
+		const result = await runSync({ ...baseDeps(await pdfDocument("root-rw-frozen-2", { hash: "hash-9" }), { sync: "Target" }), noteStore: first.noteStore, readwise }, synced.index);
+
+		expect(result.editedNotesSkipped).toBe(1);
+		expect(seen).toEqual([]);
+	});
+
+	it("offers the paper the Zotero pass linked to name the book", async () => {
+		const paper = { title: "Prompting at Scale", creators: [{ creatorType: "author", firstName: "Ada", lastName: "Smith" }] };
+		const zotero: ZoteroPass = { run: async () => ({ line: null, links: {}, keys: {}, notices: [], paper }) };
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument("root-rw-zotero"), { sync: "Target" }), zotero, readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen[0].sources).toEqual({ zotero: paper, visibleName: "Prompting" });
+	});
+
+	// Spec review B10: the book is named at its first record for good, so an EPUB's own title is read
+	// then, even when no quote needed the book to correct its wording.
+	it("offers an EPUB's own title and authors", async () => {
+		vi.mocked(readEpubBook).mockResolvedValueOnce(ALICE);
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await epubDocument("root-rw-epub", async () => PAGE_BYTES), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen[0].sources).toEqual({ epub: ALICE, visibleName: "Prompting" });
+	});
+
+	// The user, 2026-11-02: an annotated paper under Books read wrong. An EPUB is a book; everything else an article.
+	it.each([
+		["an EPUB", "books", "epub"],
+		["a PDF", "articles", "pdf"],
+	] as const)("files %s under %s", async (_name, category, fileType) => {
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument(`root-rw-category-${fileType}`, { fileType }), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => unit.category)).toEqual([category]);
+	});
+
+	// A document the recorder already knows is named: fetching its book again would buy nothing.
+	it("fetches the EPUB only when the recorder asks for the sources", async () => {
+		const fetch = vi.fn(async () => PAGE_BYTES);
+		const readwise: ReadwiseRecorder = { record: async () => {} };
+
+		await runSync({ ...baseDeps(await epubDocument("root-rw-epub-quiet", fetch), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	// A book named after the tablet's file is still a book: a fetch that fails costs its OPF, not the record.
+	it("offers no EPUB metadata when the book cannot be fetched", async () => {
+		const { readwise, seen } = fakeRecorder();
+		const api = await epubDocument("root-rw-epub-fail", async () => {
+			throw new Error("network went away");
+		});
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen[0].sources).toEqual({ visibleName: "Prompting" });
 	});
 });

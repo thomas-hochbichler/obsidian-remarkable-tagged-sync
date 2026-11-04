@@ -131,6 +131,25 @@ export function webConfigured(settings: ZoteroSettings): boolean {
 	return settings.useWeb && settings.apiKey !== null;
 }
 
+/**
+ * The Zotero page's entry on the settings root (settings-redesign spec §5): what is set up, without
+ * opening the page. A warning only where the user has to act -- a switch on with nothing behind it. The
+ * desktop app counts only where this vault may use it, as in {@link createZoteroClientFor}.
+ */
+export function zoteroPageEntry(settings: ZoteroSettings, entitlement: Entitlement): { value: string; status: "warning" | null } {
+	if (settings.useWeb && settings.apiKey === null) return { value: "No API key", status: "warning" };
+	const local = settings.useLocal && zoteroProAllowed(entitlement);
+	if (webConfigured(settings)) return { value: local ? "zotero.org + desktop app" : "zotero.org", status: null };
+	return { value: local ? "Desktop app" : "Not set up", status: null };
+}
+
+/** The Zotero line in *Copy diagnostics*. Goes into public issues, so it holds no key and no library's name. */
+export function zoteroDiagnosticsLine(settings: ZoteroSettings, entitlement: Entitlement, linkedDocuments: number): string {
+	const onOff = (value: boolean) => (value ? "on" : "off");
+	const writing = zoteroProAllowed(entitlement) ? `write text ${onOff(settings.writeText)}, add render ${onOff(settings.addRender)}` : "writing needs Pro";
+	return `${zoteroPageEntry(settings, entitlement).value}, ${writing}, ${linkedDocuments} ${linkedDocuments === 1 ? "document" : "documents"} linked`;
+}
+
 /** Reads and writes the granted local keys wherever the plugin keeps its settings. */
 export interface ZoteroSettingsStore {
 	settings(): ZoteroSettings;

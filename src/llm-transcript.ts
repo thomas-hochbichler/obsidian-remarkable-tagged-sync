@@ -3,6 +3,7 @@ import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
+import { CHROMIUM_UNREACHABLE } from "./explain-error";
 import type { Fetch } from "./obsidian-fetch";
 
 /**
@@ -73,10 +74,9 @@ export function upperFirst(text: string): string {
  * What gets the scenes a sync left out read again once the settings changed, as the clause that ends
  * a warning.
  *
- * A page: the re-transcribe command. A margin note or a page added to a PDF: not that command -- it
- * refuses a PDF note with a digest (`reTranscribeNote`'s `pdf-digest`), so naming it sent the user to
- * a refusal. The sync itself tries a digest's lost scenes again once a different backend or model is
- * set (`SyncIndexRow.ocrRetry`).
+ * A page: the re-transcribe command. A margin note or a page added to a PDF needs no command: the sync
+ * itself tries a digest's lost scenes again once a different backend or model is set
+ * (`SyncIndexRow.ocrRetry`).
  */
 export function readAgain(framing: OcrFraming): string {
 	return framing === "page" ? `run "Re-transcribe all synced notes"` : "the next sync reads them again";
@@ -559,6 +559,8 @@ export async function refusalDetail(response: Response): Promise<string> {
 	}
 }
 
+const UNREACHABLE_RE = new RegExp(`econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up|${CHROMIUM_UNREACHABLE}`, "i");
+
 /**
  * Whether a thrown request error means *nothing answered at that address*, as opposed to answering
  * badly. Matched on the text because Electron's fetch exposes no stable typed error -- the same
@@ -572,5 +574,5 @@ export async function refusalDetail(response: Response): Promise<string> {
  */
 export function isUnreachable(error: unknown): boolean {
 	const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-	return /econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up|err_connection_(refused|reset|closed|failed|timed_out)|err_name_not_resolved|err_address_unreachable|err_internet_disconnected/i.test(text);
+	return UNREACHABLE_RE.test(text);
 }

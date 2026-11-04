@@ -9,7 +9,10 @@
 //   4. an allowlist entry naming a test that is gone       -> the allowlist may only shrink
 //   5. a row bound to a CI job whose job does not run it  -> the matrix claims a check nothing runs
 //
-//   node scripts/matrix-link.mjs [--write-allowlist]
+//   node scripts/matrix-link.mjs [--write-allowlist | --suggest]
+//
+// `--suggest` prints a row skeleton for every test that still needs one, with its file and exact
+// `describe > it` name -- the part worth not retyping -- and checks nothing.
 //
 // `.mjs`, not `.ts`, and a script rather than a vitest test, for two separate reasons. It cannot be
 // a vitest test because it has to enumerate the suite it would otherwise be inside. It is not
@@ -77,9 +80,11 @@ function listTests() {
 
 // --- 3. the checks -------------------------------------------------------------------------------
 
+const suggest = process.argv.includes("--suggest");
 const { rows, files } = loadMatrix();
 const tests = listTests();
-console.log(`matrix link: ${rows.length} scenario rows in ${files.length} files, ${tests.length} tests collected\n`);
+// Not under --suggest, whose output is pasted into a matrix file as it stands.
+if (!suggest) console.log(`matrix link: ${rows.length} scenario rows in ${files.length} files, ${tests.length} tests collected\n`);
 
 // -- row shape: a row must say what happens and what is expected, and be in exactly one state
 const STATES = ["test", "gap", "waived", "job"];
@@ -175,9 +180,18 @@ if (process.argv.includes("--write-allowlist")) {
 	process.exit(0);
 }
 
-for (const t of tests) {
-	const key = testKey(t);
-	if (claimed.has(key) || allowSet.has(key)) continue;
+const unclaimed = tests.filter((t) => !claimed.has(testKey(t)) && !allowSet.has(testKey(t)));
+
+// Every skeleton, uncapped: the failure list below stops at 15, and a ticket adds more tests than that.
+// The name goes out JSON-quoted, which is valid YAML whatever quotes or colons it holds.
+if (suggest) {
+	for (const t of unclaimed) {
+		console.log(`    - id: \n      scenario: \n      expect: \n      layer: unit\n      file: ${t.file}\n      test: ${JSON.stringify(t.name)}\n`);
+	}
+	process.exit(0);
+}
+
+for (const t of unclaimed) {
 	fail(
 		"tests with no matrix row",
 		`${t.file} :: ${t.name}\n          -- add a scenario row under its feature in ${MATRIX_DIR}/, or say why it is not a feature`,

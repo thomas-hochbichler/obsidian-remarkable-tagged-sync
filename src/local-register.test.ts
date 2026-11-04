@@ -70,13 +70,14 @@ const fetcher = vi.hoisted(() => ({
 	started: [] as { root: string; dir: string }[],
 	removedModel: null as string | null,
 	discarded: null as string | null,
+	progress: { phase: "downloading", receivedBytes: 1, totalBytes: 2 } as unknown,
 }));
 
 vi.mock("./local-model-fetch", async (importOriginal) => ({
 	...(await importOriginal<typeof import("./local-model-fetch")>()),
 	startLocalModelDownload: (paths: LocalModelPaths, _platform: string, _onTick: () => void, generation: { dir: string }) => {
 		fetcher.started.push({ root: paths.root, dir: generation.dir });
-		return { progress: () => ({ phase: "downloading", receivedBytes: 1, totalBytes: 2 }), cancel: () => undefined, finished: Promise.resolve() };
+		return { progress: () => fetcher.progress, cancel: () => undefined, finished: Promise.resolve() };
 	},
 	removeLocalModel: (paths: LocalModelPaths) => {
 		fetcher.removedModel = paths.root;
@@ -121,10 +122,21 @@ interface Rendered {
 	saves: number;
 	defaultSelected: number;
 	rows: Setting[];
+	/** What the settings tab runs when it tears the card down. */
+	tearDown: void | (() => void);
 	/** The button whose label starts with this, from everything the render produced. */
 	button(prefix: string): ButtonComponent | undefined;
 	dropdown(): DropdownComponent | undefined;
 	row(name: string): Setting | undefined;
+	/** The card's heading. */
+	heading(): string | undefined;
+	/** The card's sentences. */
+	paragraphs(): string[];
+}
+
+/** Every element with this tag, depth first. */
+function allOf(el: FakeEl, tag: string): FakeEl[] {
+	return [...(el.tag === tag ? [el] : []), ...el.children.flatMap((child) => allOf(child, tag))];
 }
 
 /** Renders the backend's settings into a fresh page, as the settings tab does. */
@@ -132,7 +144,7 @@ function render(blob: BackendSettings = {}): Rendered {
 	const page = new FakeEl();
 	const counts = { saves: 0, defaultSelected: 0 };
 	takeSettings();
-	ocrBackendEntry("local")?.renderSettings?.(page as never, {
+	const tearDown = ocrBackendEntry("local")?.renderSettings?.(page as never, {
 		settings: blob,
 		save: async () => {
 			counts.saves++;
@@ -151,9 +163,12 @@ function render(blob: BackendSettings = {}): Rendered {
 			return counts.defaultSelected;
 		},
 		rows,
+		tearDown,
 		button: (prefix) => rows.flatMap((setting) => setting.buttons).find((candidate) => candidate.text.startsWith(prefix)),
 		dropdown: () => rows.flatMap((setting) => setting.dropdowns)[0],
 		row: (name) => rows.find((setting) => setting.name === name),
+		heading: () => allOf(page, "h4")[0]?.text,
+		paragraphs: () => allOf(page, "p").map((paragraph) => paragraph.text),
 	};
 }
 
@@ -183,6 +198,7 @@ beforeEach(() => {
 	fetcher.started = [];
 	fetcher.removedModel = null;
 	fetcher.discarded = null;
+	fetcher.progress = { phase: "downloading", receivedBytes: 1, totalBytes: 2 };
 	busy.transcribing = false;
 	// The download in flight is module state, deliberately: it outlives the page that started it. The
 	// plugin's own unload is what clears it, and a test that skipped this would find the next card
@@ -209,6 +225,193 @@ describe("the model the first download fetches", () => {
 		page.button("Download the model")?.click();
 
 		expect(fetcher.started).toEqual([{ root: `/vault/${SMALL.dir}`, dir: SMALL.dir }]);
+	});
+});
+
+describe("a download in flight", () => {
+	// A download lasts a long time and the card said only "Downloading the model · 2.5 GB of 6.2 GB":
+	// which model, and where 6.2 GB of the reader's disk was going, took a look into the file system.
+	it("names the model and the directory it lands in", () => {
+		render().button("Download the model")?.click();
+
+		const during = render();
+
+		expect(during.heading()).toBe(`Downloading ${BEST.label}`);
+		expect(during.row("Model files")?.desc).toBe(`/vault/${BEST.dir}/model`);
+		expect(during.button("Pause")).toBeDefined();
+	});
+
+	// The rule keeps answering with the working model until the new one is complete, so reading the
+	// name from the rule would announce the wrong model and point at a directory nothing writes into.
+	it("names the model being fetched, not the one still in use", () => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+
+		const during = render({ preferredModelDir: OLDER.dir });
+
+		expect(during.heading()).toBe(`Downloading ${BEST.label}`);
+		expect(during.row("Model files")?.desc).toBe(`/vault/${BEST.dir}/model`);
+	});
+
+	it("still says where the files are once it is paused", () => {
+		machine.snapshot = { ...machine.snapshot, partPresent: true };
+
+		const paused = render();
+
+		expect(paused.heading()).toBe("Download paused");
+		expect(paused.row("Model files")?.desc).toBe(`/vault/${BEST.dir}/model`);
+	});
+
+	it("says the working model keeps transcribing while a newer one arrives", () => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+
+		const words = render({ preferredModelDir: OLDER.dir }).paragraphs().join(" ");
+
+		expect(words).toContain(`Transcription keeps using ${OLDER.label}`);
+		expect(words).not.toContain("without a transcript");
+	});
+
+	it("says notes arrive without a transcript while there is no model yet", () => {
+		render().button("Download the model")?.click();
+
+		expect(render().paragraphs().join(" ")).toContain("notes just arrive without a transcript");
+	});
+});
+
+/**
+ * A newer model's download that failed, with the older model still working. The rule keeps answering
+ * with the older one, so a button wired to the rule's answer acts on the model that works.
+ */
+describe("a newer model's download that failed", () => {
+	beforeEach(() => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+	});
+
+	function failWith(failure: unknown): Rendered {
+		fetcher.progress = { phase: "failed", failure };
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+		return render({ preferredModelDir: OLDER.dir });
+	}
+
+	it.each([
+		["paused by the reader", { phase: "failed", failure: { kind: "cancelled" } }],
+		["refused because another run was busy", { phase: "failed", failure: { kind: "busy" } }],
+		["finished", { phase: "done" }],
+	])("draws what is on disk once the download was %s", (_name, progress) => {
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+		fetcher.progress = progress;
+
+		const page = render({ preferredModelDir: OLDER.dir });
+
+		expect(page.heading()).toBe("Local model — ready");
+		expect(page.row("Model files")?.desc).toBe(`/vault/${OLDER.dir}/model`);
+	});
+
+	it("resumes the newer model, not the one in use", () => {
+		const page = failWith({ kind: "network", message: "offline" });
+		expect(page.heading()).toBe("Download interrupted");
+		fetcher.started = [];
+
+		page.button("Resume")?.click();
+
+		expect(fetcher.started).toEqual([{ root: `/vault/${BEST.dir}`, dir: BEST.dir }]);
+	});
+
+	// `removeLocalModel` takes the engine with it, which the working model needs as well, and the
+	// backend selection would fall back to Vision with a good model still on disk.
+	it("deletes only what it fetched, and leaves the working model, its engine and the backend alone", async () => {
+		const page = failWith({ kind: "corrupt" });
+		expect(page.heading()).toBe("The download could not be verified");
+
+		await page.button("Delete and start over")?.click();
+
+		expect(machine.removed).toEqual([BEST.dir]);
+		expect(fetcher.removedModel).toBeNull();
+		expect(page.defaultSelected).toBe(0);
+		expect(preferred(page.blob)).toBe(OLDER.dir);
+	});
+});
+
+/**
+ * Two complete models, with the less accurate one picked. Found in the 1.11.0 smoke test: the card
+ * offered a 6.2 GB download of a model already on disk, and Delete took the engine and the backend
+ * selection from the one that stays.
+ */
+describe("two complete models, the smaller one picked", () => {
+	beforeEach(() => {
+		machine.directories = [complete(BEST), complete(SMALL)];
+		machine.snapshot = readySnapshot(SMALL);
+	});
+
+	it("offers no download of the model already on disk", () => {
+		const page = render({ preferredModelDir: SMALL.dir });
+
+		expect(page.button(`Get ${BEST.label}`)).toBeUndefined();
+		expect(page.paragraphs().join(" ")).not.toContain(BEST.label);
+	});
+
+	it("deletes only the one on the card, and goes back to the other", async () => {
+		const page = render({ preferredModelDir: SMALL.dir });
+
+		await page.button("Delete the model")?.click();
+		await settle();
+
+		expect(machine.removed).toEqual([SMALL.dir]);
+		expect(fetcher.removedModel).toBeNull();
+		expect(page.defaultSelected).toBe(0);
+		expect(preferred(page.blob)).toBeUndefined();
+	});
+
+	// A model this computer has no memory for transcribes nothing, so keeping the backend for it would
+	// leave every sync writing notes without a transcript.
+	it("deletes the whole setup when the other model cannot run on this computer", async () => {
+		const memory = machine.totalMemoryBytes;
+		machine.totalMemoryBytes = SMALL.floorGb.darwin * 1024 ** 3;
+		try {
+			const page = render({ preferredModelDir: SMALL.dir });
+
+			await page.button("Delete the model")?.click();
+			await settle();
+
+			expect(machine.removed).toEqual([]);
+			expect(fetcher.removedModel).not.toBeNull();
+		} finally {
+			machine.totalMemoryBytes = memory;
+		}
+	});
+});
+
+describe("the speed figure, across a change of model", () => {
+	beforeEach(() => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+	});
+
+	// Quoted as this machine's it would be false, and looking at another model must not cost the figure:
+	// going back to the first one would have to measure ten pages again.
+	it("does not quote timings measured on another model, and keeps them", () => {
+		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageModel: BEST.dir, recentPageMs: Array.from({ length: 10 }, () => 1_000) };
+
+		expect(render(blob).paragraphs().join(" ")).not.toContain("on this machine");
+
+		expect(blob.recentPageMs).toHaveLength(10);
+		expect(blob.recentPageModel).toBe(BEST.dir);
+	});
+
+	it("keeps timings measured on this model", () => {
+		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageModel: OLDER.dir, recentPageMs: Array.from({ length: 10 }, () => 9_000) };
+
+		expect(render(blob).paragraphs().join(" ")).toContain("9 seconds a page on this machine");
+	});
+
+	it("does not trust timings from before they named a model", () => {
+		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageMs: Array.from({ length: 10 }, () => 1_000) };
+
+		expect(render(blob).paragraphs().join(" ")).not.toContain("on this machine");
 	});
 });
 
@@ -252,6 +455,26 @@ describe("the choice of model", () => {
 		render(page.blob).dropdown()?.pick(BEST.dir);
 		await settle();
 		expect(preferred(page.blob)).toBeUndefined();
+	});
+});
+
+// The card redraws itself on every download tick. Once the settings tab has torn it down, a tick
+// must draw nothing -- and must still redraw a newer card that took its place.
+describe("a card the settings tab tore down", () => {
+	it("draws nothing more, while a newer card keeps redrawing", async () => {
+		const old = render();
+		const newer = render();
+		if (typeof old.tearDown !== "function") throw new Error("the card returned no cleanup");
+
+		old.tearDown();
+		newer.dropdown()?.pick(SMALL.dir);
+		await settle();
+		expect(takeSettings().map((setting) => setting.name)).toContain("Model");
+
+		if (typeof newer.tearDown === "function") newer.tearDown();
+		newer.dropdown()?.pick(BEST.dir);
+		await settle();
+		expect(takeSettings()).toEqual([]);
 	});
 });
 

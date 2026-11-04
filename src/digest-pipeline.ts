@@ -11,7 +11,7 @@
 
 import { chapterName } from "./chapter-names";
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
-import { digestId, renderDigest, type AddedPage, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
+import { digestId, digestKey, renderDigest, type AddedPage, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
 import type { EpubBook } from "./epub-text";
 import { findInkMarks, findMarkerMarks, type InkMark, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
@@ -344,6 +344,7 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
 			pdfRect: unionRect(rects),
 			highlight: {
 				id: digestId("hl", page.pageId, source.id),
+				key: digestKey(page.pageId, source.id),
 				// Only where they name a place on the source page. Without a text layer the frame is the
 				// device screen (see `buildDigest`), and the same numbers would put the mark somewhere on
 				// the tablet -- the condition `DigestPage.source` is derived from.
@@ -380,6 +381,7 @@ function placeMark(page: DigestPageInput, mark: InkMark, tool: "marker" | "pen")
 		highlight: {
 			tool,
 			id: digestId("hl", page.pageId, mark.strokeId),
+			key: digestKey(page.pageId, mark.strokeId),
 			// One box, and it is the marked *text's* rather than the ink's -- see `InkMark.pdfRect`. An
 			// underline's own box sits in the whitespace below the words, which is not what was marked.
 			rects: [mark.pdfRect],
@@ -602,7 +604,7 @@ async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<
 		// `rect` is the ink itself; `region` is the wider clip that includes the paragraph beside it,
 		// placed in the render. A sticky note in another reader belongs on the handwriting, not on the
 		// paragraph it comments on.
-		note: { id, anchor, text, region: noteRegion(regionRect, context), rect: sourceRect(rect, context), top: cluster.rowTop },
+		note: { id, key: digestKey(page.pageId, cluster.anchorStrokeId), anchor, text, region: noteRegion(regionRect, context), rect: sourceRect(rect, context), top: cluster.rowTop },
 		anchor,
 		pdfLeft: rect.x,
 		pdfTop: rect.y + rect.height,
@@ -761,6 +763,7 @@ async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink
 			// The entry *is* the page, so the page is its identity -- stable across re-syncs without
 			// depending on which stroke happens to carry the smallest CRDT id.
 			id: digestId("nt", page.pageId, "page"),
+			key: digestKey(page.pageId, "page"),
 			anchor: { kind: "page" },
 			text,
 			region: null,
@@ -800,7 +803,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		const { entry, unread } = await buildPageTranscript(state, page, ink);
 		// Ahead of page 1 where the caller could not say: a document whose own pages are all gone.
 		const place = page.place ?? { relation: "before", sourceIndex: 0, nth: null };
-		const added: AddedPage = { relation: place.relation, label: await labelOf(place.sourceIndex), nth: place.nth, ...(unread ? { unread: true as const } : {}) };
+		const added: AddedPage = { relation: place.relation, label: await labelOf(place.sourceIndex), sourceIndex: place.sourceIndex, nth: place.nth, ...(unread ? { unread: true as const } : {}) };
 		// A page added on the device is not a page of the source document, so nothing on it can be
 		// placed there -- which is why write-back makes it a note of its own (Zotero spec §2).
 		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, source: null, highlights: [], notes: [entry], added };

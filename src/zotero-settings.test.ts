@@ -7,6 +7,8 @@ import {
 	DEFAULT_ZOTERO_SETTINGS,
 	zoteroProAllowed,
 	webConfigured, zoteroConfigured,
+	zoteroDiagnosticsLine,
+	zoteroPageEntry,
 	type ZoteroSettings,
 	zoteroSettingsStore,
 } from "./zotero-settings";
@@ -129,6 +131,51 @@ describe("what counts as set up", () => {
 	// before this feature -- which is what "the free plugin is unchanged" (§5) means in practice.
 	it("starts switched off entirely", () => {
 		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ useWeb: false, apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, sendTag: "to-remarkable", groups: [], writeText: true, addRender: false });
+	});
+});
+
+// Settings-redesign spec §5: the Zotero page's entry on the root says what is set up in one to three
+// words, and warns only where the user has to act. First match wins.
+describe("the Zotero page's entry", () => {
+	const BOTH: ZoteroSettings = { ...WEB_ONLY, useLocal: true };
+	const NO_KEY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, useWeb: true, useLocal: true };
+
+	it("reads each state as the spec's table says", () => {
+		const table = [
+			// zotero.org switched on without a key: the one state to act on.
+			[NO_KEY, BOUGHT, "No API key", "warning"],
+			[BOTH, BOUGHT, "zotero.org + desktop app", null],
+			// The desktop app counts only where the vault may use it.
+			[BOTH, FREE, "zotero.org", null],
+			[WEB_ONLY, FREE, "zotero.org", null],
+			[DESKTOP_ONLY, TRIAL, "Desktop app", null],
+			[DESKTOP_ONLY, FREE, "Not set up", null],
+			// A key with the switch off is nothing.
+			[WEB_OFF, BOUGHT, "Not set up", null],
+			[DEFAULT_ZOTERO_SETTINGS, BOUGHT, "Not set up", null],
+		] as const;
+
+		expect(table.map(([settings, entitlement]) => zoteroPageEntry(settings, entitlement))).toEqual(
+			table.map(([, , value, status]) => ({ value, status })),
+		);
+	});
+});
+
+// A line a reporter pastes into a public issue, so it says what is set up and carries no key.
+describe("the Zotero line in the diagnostics", () => {
+	const BOTH: ZoteroSettings = { ...WEB_ONLY, useLocal: true, writeText: true, addRender: false };
+
+	it("says the connection, the two switches and how many documents are linked", () => {
+		expect(zoteroDiagnosticsLine(BOTH, BOUGHT, 5)).toBe("zotero.org + desktop app, write text on, add render off, 5 documents linked");
+		expect(zoteroDiagnosticsLine({ ...BOTH, writeText: false, addRender: true }, TRIAL, 1)).toBe("zotero.org + desktop app, write text off, add render on, 1 document linked");
+	});
+
+	it("does not report switches a free vault cannot use", () => {
+		expect(zoteroDiagnosticsLine(BOTH, FREE, 0)).toBe("zotero.org, writing needs Pro, 0 documents linked");
+	});
+
+	it("never carries the API key", () => {
+		expect(zoteroDiagnosticsLine(BOTH, BOUGHT, 5)).not.toContain(BOTH.apiKey);
 	});
 });
 

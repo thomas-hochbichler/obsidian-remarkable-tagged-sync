@@ -46,6 +46,10 @@ export interface DiagnosticsInput {
 	 */
 	pendingOcrRetries: number;
 	mappedTagCount: number;
+	/** How Zotero is set up (`zoteroDiagnosticsLine`). A report about it could not say whether it was even on. */
+	zotero: string;
+	/** How the Readwise push stands (`readwiseDiagnosticsLine`), for the same reason. */
+	readwise: string;
 	lastSyncAt: string | null;
 	/** Raw text of the last failure, or null. Two error messages end with "see the developer console", which most users have never opened. */
 	lastSyncError: string | null;
@@ -76,6 +80,8 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
 		`Text layer (last sync): ${input.textLayer === null ? "not measured yet" : `${input.textLayer.layered} of ${input.textLayer.pages} pages, ${input.textLayer.placed} words placed, ${input.textLayer.leftOut} left out`}`,
 		`Documents waiting to be read again: ${input.pendingOcrRetries === 0 ? "none" : input.pendingOcrRetries}`,
 		`Mapped tags: ${input.mappedTagCount}`,
+		`Zotero: ${input.zotero}`,
+		`Readwise: ${input.readwise}`,
 		`Last sync: ${input.lastSyncAt ?? "never"}`,
 		`Last error: ${input.lastSyncError ?? "none"}`,
 	].join("\n");

@@ -12,6 +12,38 @@ describe("explainError", () => {
 		expect(explainError(new Error("connect ECONNREFUSED 1.2.3.4:443"), "sync")).toBe(OFFLINE);
 	});
 
+	// A Wi-Fi with no internet behind it, in the final smoke test of 1.11.0: `requestUrl` throws Chromium's
+	// words, and the user read that reMarkable may have changed their service, or while connecting that
+	// their code was wrong.
+	it("names a network failure in Chromium's words too, in either context", () => {
+		for (const message of [
+			"net::ERR_NAME_NOT_RESOLVED",
+			"net::ERR_NAME_RESOLUTION_FAILED",
+			"net::ERR_DNS_TIMED_OUT",
+			"net::ERR_CONNECTION_REFUSED",
+			"net::ERR_CONNECTION_RESET",
+			"net::ERR_CONNECTION_CLOSED",
+			"net::ERR_CONNECTION_ABORTED",
+			"net::ERR_CONNECTION_FAILED",
+			"net::ERR_CONNECTION_TIMED_OUT",
+			"net::ERR_TIMED_OUT",
+			"net::ERR_ADDRESS_UNREACHABLE",
+			"net::ERR_INTERNET_DISCONNECTED",
+			"net::ERR_NETWORK_CHANGED",
+			"net::ERR_PROXY_CONNECTION_FAILED",
+			"net::ERR_TUNNEL_CONNECTION_FAILED",
+		]) {
+			expect(explainError(new Error(message), "sync"), message).toBe(OFFLINE);
+			expect(explainError(new Error(message), "connect"), message).toBe(OFFLINE);
+		}
+	});
+
+	it("keeps a net error that a connection would not cure out of it", () => {
+		for (const message of ["net::ERR_CERT_AUTHORITY_INVALID", "net::ERR_INSUFFICIENT_RESOURCES"]) {
+			expect(explainError(new Error(message), "sync"), message).toContain("did not expect");
+		}
+	});
+
 	it("blames the one-time code when connecting, whatever the cloud said", () => {
 		expect(explainError(new Error("Request failed with status 400"), "connect")).toBe(BAD_CODE);
 		expect(explainError(new Error("401 Unauthorized"), "connect")).toBe(BAD_CODE);

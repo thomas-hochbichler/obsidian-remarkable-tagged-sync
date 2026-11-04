@@ -16,8 +16,11 @@ async function deflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
 	return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/** A real ZIP: local headers, then the central directory, then the EOCD. `deflate` picks method 8. */
-async function makeZip(files: { name: string; content: string; deflate?: boolean }[]): Promise<Uint8Array> {
+/**
+ * A real ZIP: local headers, then the central directory, then the EOCD. `deflate` picks method 8;
+ * `corrupt` claims method 8 for bytes that were never deflated.
+ */
+async function makeZip(files: { name: string; content: string; deflate?: boolean; corrupt?: boolean }[]): Promise<Uint8Array> {
 	const encoder = new TextEncoder();
 	const locals: Uint8Array[] = [];
 	const centrals: Uint8Array[] = [];
@@ -30,7 +33,7 @@ async function makeZip(files: { name: string; content: string; deflate?: boolean
 		const local = new Uint8Array(30 + name.length + data.length);
 		const localView = new DataView(local.buffer);
 		localView.setUint32(0, 0x04034b50, true);
-		localView.setUint16(8, file.deflate ? 8 : 0, true);
+		localView.setUint16(8, file.deflate || file.corrupt ? 8 : 0, true);
 		localView.setUint32(14, crc32(raw), true);
 		localView.setUint32(18, data.length, true);
 		localView.setUint32(22, raw.length, true);
@@ -42,7 +45,7 @@ async function makeZip(files: { name: string; content: string; deflate?: boolean
 		const central = new Uint8Array(46 + name.length);
 		const centralView = new DataView(central.buffer);
 		centralView.setUint32(0, 0x02014b50, true);
-		centralView.setUint16(10, file.deflate ? 8 : 0, true);
+		centralView.setUint16(10, file.deflate || file.corrupt ? 8 : 0, true);
 		centralView.setUint32(16, crc32(raw), true);
 		centralView.setUint32(20, data.length, true);
 		centralView.setUint32(24, raw.length, true);
@@ -174,6 +177,66 @@ describe("readEpubBook", () => {
 			const zip = await makeZip([{ name: "a.xhtml", content: "<p>Just prose.</p>" }]);
 
 			expect((await readEpubBook(zip))?.chapters).toEqual([]);
+		});
+	});
+
+	// The book's own title and authors, which name it in Readwise ahead of the tablet's file name
+	// (Readwise spec §1.2).
+	describe("the title and authors", () => {
+		const opf = (metadata: string) =>
+			`<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">${metadata}</metadata><manifest/><spine/></package>`;
+		const book = (metadata: string) =>
+			makeZip([
+				{ name: "OEBPS/chapter1.xhtml", content: "<p>Alice was beginning to get very tired.</p>" },
+				{ name: "OEBPS/content.opf", content: opf(metadata), deflate: true },
+			]);
+
+		it("reads the title and the one author off the OPF", async () => {
+			const epub = await readEpubBook(await book(`<dc:title id="t">Alice&#8217;s Adventures in Wonderland</dc:title><dc:creator opf:role="aut">Lewis Carroll</dc:creator>`));
+
+			expect(epub).toMatchObject({ title: "Alice’s Adventures in Wonderland", authors: ["Lewis Carroll"] });
+		});
+
+		it("keeps every author, in the order the OPF lists them", async () => {
+			const epub = await readEpubBook(await book(`<dc:title>Good Omens</dc:title><dc:creator id="a1">Terry Pratchett</dc:creator><dc:creator id="a2">Neil Gaiman</dc:creator>`));
+
+			expect(epub?.authors).toEqual(["Terry Pratchett", "Neil Gaiman"]);
+		});
+
+		// Blank is not a title: an empty one sent to Readwise would name the book "", and the tablet's
+		// own name for it is the better answer.
+		it("leaves out a blank title and blank authors rather than reporting them empty", async () => {
+			const epub = await readEpubBook(await book(`<dc:title>  </dc:title><dc:creator></dc:creator>`));
+
+			expect(epub).not.toHaveProperty("title");
+			expect(epub?.authors).toEqual([]);
+		});
+
+		it("reports no title and no authors for a book without them", async () => {
+			const epub = await readEpubBook(await book(`<dc:language>en</dc:language>`));
+
+			expect(epub).not.toHaveProperty("title");
+			expect(epub?.authors).toEqual([]);
+		});
+
+		// A book with no OPF at all is still read for its prose: the metadata is a nicety, the quotes are not.
+		it("still reads a book that has no OPF", async () => {
+			const epub = await readEpubBook(await makeZip([{ name: "a.xhtml", content: "<p>Just prose.</p>" }]));
+
+			expect(epub).toMatchObject({ text: "Just prose.", authors: [] });
+			expect(epub).not.toHaveProperty("title");
+		});
+
+		it("still reads a book whose OPF cannot be decompressed", async () => {
+			const epub = await readEpubBook(
+				await makeZip([
+					{ name: "a.xhtml", content: "<p>Just prose.</p>" },
+					{ name: "content.opf", content: opf("<dc:title>Lost</dc:title>"), corrupt: true },
+				]),
+			);
+
+			expect(epub).toMatchObject({ text: "Just prose.", authors: [] });
+			expect(epub).not.toHaveProperty("title");
 		});
 	});
 });

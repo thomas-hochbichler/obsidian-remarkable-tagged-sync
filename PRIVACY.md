@@ -10,11 +10,11 @@ details: [IMPRESSUM.md](./IMPRESSUM.md).
 
 ## 1. What the plugin sends, and when
 
-### Your own accounts and devices: the reMarkable cloud, your tablet, a transcription backend, Zotero
+### Your own accounts and devices: the reMarkable cloud, your tablet, a transcription backend, Zotero, Readwise
 
 These are your own accounts, used on your instruction: the reMarkable cloud (or, with Pro, your
 tablet over your own network), any transcription backend you configure, and your Zotero library
-if you connect it. They are described in detail in the README's
+and your Readwise library if you connect them. They are described in detail in the README's
 [Network use](./README.md#network-use) section, which is the authoritative list. Nothing there
 goes to me.
 
@@ -55,7 +55,7 @@ The plugin contains no other call to a server of mine.
 
 Your licence key, the activation id, the date of the last successful check, the trial start date
 and its signature are stored in the plugin's `data.json`, inside your vault, next to the reMarkable device token that
-is already there — as is your Zotero API key, if you set one up. That file is yours. If your vault is synced, the file travels with it — which is
+is already there — as is your Zotero API key, if you set one up. Your Readwise access token is not in that file: it sits in Obsidian's Keychain on each computer, encrypted by your operating system, and is never synced. That file is yours. If your vault is synced, the file travels with it — which is
 intended, because one vault is one activation.
 
 ## 3. What I store when you buy
@@ -116,7 +116,8 @@ system.
   or — if you switch on *Add the render to Zotero* — to your own Zotero Storage. Transcribed text
   leaves it only to that same backend, and — with Zotero write-back — into your own Zotero
   library, or a group library you switched on: margin notes as annotation comments, pages you
-  added as notes. The render carries its text layer, so the transcript goes along with it. See the
+  added as notes; and — with *Push highlights to Readwise* — into your own Readwise library: the
+  highlighted sentences, margin notes and pages you added, as text, each with a link back to its page that names your vault. The render carries its text layer, so the transcript goes along with it. See the
   README.
 
-*Last updated: 2026-10-30.*
+*Last updated: 2026-11-04.*

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NO_LICENCE } from "./licence-state";
 import { DEFAULT_AUTO_SYNC, DEFAULT_DATA, migrateSettings, type SettingsEnv } from "./settings-store";
@@ -124,6 +126,10 @@ describe("migrateSettings", () => {
 			marginNotes: true,
 			frontmatter: true,
 			licence: { ...NO_LICENCE, key: "k", activationId: "a", validatedAt: "2026-08-01T00:00:00.000Z" },
+			readwise: { push: true, tokenSecret: "readwise-token" },
+			readwiseBooks: { "576dc0a6-323b-468e-bd69-a2ae6c25dbb9": { title: "Cape Marrow", bookId: 64836623, highlights: { "p:1a2b": { pushed: { text: "A.", location: 1 }, id: 901 } } } },
+			readwiseAccount: "3f2a9c01b7de",
+			readwiseRecording: true,
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);
 	});
@@ -151,6 +157,41 @@ describe("migrateSettings", () => {
 	it("honours a marginNotes: true written by a 1.1.0 beta", () => {
 		expect(migrateSettings({ marginNotes: true }, ENV).marginNotes).toBe(true);
 		expect(migrateSettings({}, ENV).marginNotes).toBe(false);
+	});
+
+	describe("the Readwise push (Readwise spec §3)", () => {
+		it("gives the data.json the last release wrote the push off, no token and no books", () => {
+			const legacy: unknown = JSON.parse(readFileSync(join(process.cwd(), "test-fixtures", "legacy-state", "vault", ".obsidian", "plugins", "remarkable-tagged-sync", "data.json"), "utf8"));
+
+			const data = migrateSettings(legacy, ENV);
+
+			expect([data.readwise, data.readwiseBooks]).toEqual([{ push: false, tokenSecret: null }, {}]);
+			expect(["readwiseAccount", "readwiseAccountBefore", "readwiseAccountClash", "readwiseRecording"].filter((key) => key in data)).toEqual([]);
+		});
+
+		it("fills a half-written readwise block from the defaults", () => {
+			expect(migrateSettings({ readwise: { push: true } }, ENV).readwise).toEqual({ push: true, tokenSecret: null });
+		});
+
+		// A book this build cannot read was written by another install of this vault (spec §3).
+		it("carries the books whole, a malformed one included", () => {
+			const readwiseBooks = { "doc-1": { title: "Cape Marrow", highlights: {} }, "doc-2": "written by a newer build" };
+
+			expect(migrateSettings({ readwiseBooks }, ENV).readwiseBooks).toEqual(readwiseBooks);
+		});
+
+		// Recording spreads the map; a string would come back as one book per character.
+		it("reads books that are no map as none", () => {
+			for (const readwiseBooks of ["junk", [{ title: "Cape Marrow" }], null]) expect(migrateSettings({ readwiseBooks }, ENV).readwiseBooks).toEqual({});
+		});
+
+		it("keeps the account and recording marks only where they read as such", () => {
+			const marks = { readwiseAccount: "3f2a9c01b7de", readwiseAccountBefore: "0c4e8a1f9b23", readwiseAccountClash: true, readwiseRecording: true };
+
+			expect(migrateSettings(marks, ENV)).toMatchObject(marks);
+			const junk = migrateSettings({ readwiseAccount: 7, readwiseAccountBefore: "", readwiseAccountClash: "yes", readwiseRecording: 1 }, ENV);
+			expect(["readwiseAccount", "readwiseAccountBefore", "readwiseAccountClash", "readwiseRecording"].filter((key) => key in junk)).toEqual([]);
+		});
 	});
 
 	it("keeps an attachments folder the user chose, and defaults the rest", () => {

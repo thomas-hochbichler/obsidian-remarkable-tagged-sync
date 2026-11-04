@@ -2,12 +2,18 @@ import {
 	type App,
 	apiVersion,
 	debounce,
+	type ExtraButtonComponent,
+	FuzzySuggestModal,
 	Notice,
 	Platform,
 	PluginSettingTab,
-	Setting,
+	type Setting,
+	type SettingDefinition,
+	type SettingDefinitionGroup,
+	type SettingDefinitionItem,
+	type SettingDefinitionPage,
+	type SettingDefinitionRender,
 	TFolder,
-	type ToggleComponent,
 } from "obsidian";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { isMeteredProvider } from "./auto-sync";
@@ -16,7 +22,7 @@ import { confirmDialog } from "./confirm-modal";
 import { explainError } from "./explain-error";
 import { frontmatterAllowed } from "./frontmatter";
 import { activateKey, deactivateHere } from "./licence-check";
-import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft, trialStartFailed } from "./licence-messages";
+import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, TAG_CAP_MESSAGE, trialDaysLeft, trialStartFailed } from "./licence-messages";
 import { withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
 import { startTrial, TrialStartError } from "./trial-ticket";
@@ -29,14 +35,25 @@ import { DEFAULT_SEND_TAG } from "./zotero-send";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
-import { invalidateRenders, pendingOcrRetries } from "./sync-engine";
-import { planTagRouting } from "./tag-routing-view";
+import { createReadwiseClient } from "./readwise-client";
+import {
+	type ReadwiseConnection,
+	readwiseClashed,
+	readwiseConnectionLine,
+	readwiseDiagnosticsLine,
+	readwisePageEntry,
+	readwiseProAllowed,
+	startOverReadwise,
+	tokenFingerprint,
+} from "./readwise-push";
+import { pendingOcrRetries } from "./sync-engine";
+import { folderLabel, type MappedTag, planTagRouting, REMOVAL_MESSAGE, type UnmappedTag } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
-import { webConfigured, zoteroProAllowed } from "./zotero-settings";
-import type { ZoteroGroup } from "./zotero-client";
 import { linkedDocumentIds } from "./zotero-links";
+import { webConfigured, zoteroDiagnosticsLine, zoteroPageEntry, zoteroProAllowed } from "./zotero-settings";
+import type { ZoteroGroup } from "./zotero-client";
 import { visionRunStats } from "./vision-ocr-backend";
 
 /**
@@ -78,12 +95,67 @@ const PRO_BUY_URL = "https://buy.polar.sh/polar_cl_ri72ZVng24KrtsNUNu8poN2J0rsvT
  */
 const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
 
+/** Settings-redesign spec §2.2: what a row that threw says instead, and what the tab says if it cannot be built. */
+const ROW_FAILED = "This row could not be drawn. Copy diagnostics under Help and report it.";
+
+/** The text keys: saved through one debounce, as their fields always were (spec §2.3). */
+const TYPED_KEYS = new Set(["attachmentsFolder", "zotero.apiKey", "zotero.folder", "zotero.sendTag"]);
+
+/** What a typed or picked key stores (spec §6.1, §6.4, §7). */
+const SET_RULES: Record<string, (typed: string) => unknown> = {
+	// The Keychain picker hands back `null` when the choice is cleared; no entry is no name, not `""`.
+	"readwise.tokenSecret": (picked) => picked || null,
+	// `""` would be a configured connection that answers 401 to every call: a cleared field is no key.
+	"zotero.apiKey": (typed) => (typed === "" ? null : typed),
+	// Blank is the default rather than a folder with no name: a document put at the root of the tablet
+	// is one the user has to go looking for.
+	"zotero.folder": (typed) => typed.trim() || DEFAULT_SEND_FOLDER,
+	"zotero.sendTag": (typed) => typed.trim(),
+};
+
+/** A group library's switch, `zotero.group:<id>` (spec §6.2). */
+const GROUP_KEY = "zotero.group:";
+const groupKey = (group: ZoteroGroup): string => `${GROUP_KEY}${group.id}`;
+
+/**
+ * *Sync interval*'s options. Not numeric keys: an object lists integer-like keys first, which would put
+ * "Only on launch" last (spec §3.5).
+ */
+const INTERVALS: Record<string, string> = {
+	launch: "Only on launch",
+	h2: "Every 2 hours",
+	h6: "Every 6 hours",
+	h12: "Every 12 hours",
+	h24: "Every 24 hours",
+};
+
 export class TaggedSyncSettingTab extends PluginSettingTab {
 	private code = "";
-	private discoveredTags: string[] = [];
+	/**
+	 * What the last scan found, kept for the Obsidian session -- the tab is built once, in `onload` --
+	 * and never in `data.json`; `null` before the first scan (settings-redesign spec §4.1).
+	 */
+	private foundTags: string[] | null = null;
+	private scanning = false;
+	/** What the Tag routing filter holds, and the pill row's handle to filter its pills by it (spec §4.3). */
+	private tagFilter = "";
+	private pillRow: { filter(query: string): void } | null = null;
+	/** What the last plan mapped and whether it offers the filter, for {@link matchTag}. */
+	private mappedTags: readonly MappedTag[] = [];
+	private filterShown = false;
+	/** The heading's scan icon, which a redraw does not draw again. */
+	private scanIcon: ExtraButtonComponent | null = null;
 	/** What the pairing row holds between keystrokes. The password is dropped the moment it is used. */
 	private deviceHost = "";
 	private devicePassword = "";
+	/** `data.json` is not written on every keystroke; the in-memory value is current at once. */
+	private readonly persistTyped = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+	/** The Zotero *Connection* line's probe, while the line is on screen (spec §2.8). */
+	private refreshZoteroLine: (() => void) | null = null;
+	/** The key field asks the line again once the typing stops. */
+	private readonly recheckZotero = debounce(() => this.refreshZoteroLine?.(), 600, true);
+	/** The Readwise *Connection* line's probe, while the line is on screen (spec §2.8). */
+	private refreshReadwiseLine: (() => void) | null = null;
 
 	constructor(
 		app: App,
@@ -92,73 +164,200 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
-	display(): void {
-		this.redraw();
-	}
-
 	/**
-	 * The whole tab, drawn again in place. Controls call this rather than `display()`: that is
-	 * deprecated since Obsidian 1.13 and the store's lint flags every call to it, while Obsidian itself
-	 * still calls it to open the tab.
-	 */
-	private redraw(): void {
-		const { containerEl } = this;
-		// Read before the rebuild, restored after it. Nearly every control on this page redraws the
-		// whole tab in place -- choosing a backend, a transport, a tag -- and an emptied element scrolls
-		// back to the top, which threw the reader away from the setting they had just touched. Picking a
-		// backend two thirds down the page was the case that made it obvious.
-		const offset = containerEl.scrollTop;
-		containerEl.empty();
-
-		const connected = this.plugin.transport().status().connected;
-		this.renderSources(containerEl);
-
-		// Order follows how often a row is touched, not how it was built: what to sync is the setting a
-		// user comes back to, transcription is chosen roughly once, and the links at the end are read
-		// when something has already gone wrong.
-		if (connected) {
-			this.renderTagRouting(containerEl);
-		}
-		this.renderVaultOutput(containerEl);
-		this.renderOcrSettings(containerEl);
-		this.renderAutoSyncSettings(containerEl);
-		this.renderZotero(containerEl);
-		this.renderPro(containerEl);
-		this.renderActions(containerEl, connected);
-		// After the content is back, so there is something to scroll through. A page that got shorter
-		// clamps this itself, which is the right answer -- there is nowhere further to be.
-		containerEl.scrollTop = offset;
-	}
-
-	/**
-	 * Where this vault reads from, and what it falls back to.
+	 * The whole tab, as Obsidian 1.13's declarative settings API asks for it (settings-redesign spec
+	 * §3): eight groups on the root page, Zotero and Readwise as pages under *Integrations*. Asked for
+	 * on every opening and by every `update()`, so it reads the state and does no network I/O.
 	 *
-	 * Rendered above the cloud account rather than beside it, because with two sources the first
-	 * question is which one is in use -- and the row a free user sees here is the only place the
+	 * A row that changes the page calls `update()`, which keeps the reader's place itself (ticket 17's
+	 * F1, spec §2.5).
+	 *
+	 * It runs inside `onload` too (`addSettingTab`), where a throw would stop the plugin, so a throw
+	 * here becomes one row instead.
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		try {
+			const connected = this.plugin.transport().status().connected;
+			return [
+				this.connectionGroup(connected),
+				...(connected ? [this.tagGroup()] : []),
+				this.vaultGroup(),
+				this.transcriptionGroup(),
+				this.autoSyncGroup(),
+				{
+					type: "group",
+					heading: "Integrations",
+					cls: "tagged-sync-group-integrations",
+					items: [this.zoteroPage(), this.readwisePage()],
+				},
+				this.proGroup(),
+				this.helpGroup(),
+			];
+		} catch (error) {
+			console.error("Tagged Sync: the settings could not be drawn", error);
+			return [{ name: "The settings could not be drawn.", desc: "Report it with the steps that led here." }];
+		}
+	}
+
+	/**
+	 * A render callback that cannot blank the tab (spec §2.2): a throw is logged and the row says so,
+	 * and every other row still draws. Tearing the row down writes what is still held for a text key.
+	 */
+	private guarded(name: string, render: SettingDefinitionRender["render"]): SettingDefinitionRender["render"] {
+		return (setting, group) => {
+			let cleanup: void | (() => void);
+			try {
+				cleanup = render(setting, group);
+			} catch (error) {
+				console.error(`Tagged Sync: the settings row "${name}" could not be drawn`, error);
+				setting.settingEl.empty();
+				setting.settingEl.addClass("setting-item");
+				setting.settingEl.appendChild(setting.infoEl);
+				setting.setDesc(ROW_FAILED);
+			}
+			return () => {
+				cleanup?.();
+				this.persistTyped.run();
+			};
+		};
+	}
+
+	/**
+	 * A predicate that cannot blank the tab -- {@link guarded}'s twin for `visible`, `disabled`,
+	 * `displayValue` and `status` (spec §2.2): a throw is logged and answers `safe`, the value that shows
+	 * nothing broken (hidden, disabled, no value, no status).
+	 */
+	private guardedValue<T>(name: string, safe: T, test: () => T): () => T {
+		return () => {
+			try {
+				return test();
+			} catch (error) {
+				console.error(`Tagged Sync: the settings row "${name}" could not be evaluated`, error);
+				return safe;
+			}
+		};
+	}
+
+	/**
+	 * A key into `data.json`, one level deep at most: `marginNotes`, `zotero.useWeb`, `readwise.push`, …
+	 * (spec §2.3). `autoSync.interval` is *Sync interval*'s option key for `autoSync.intervalHours`, and
+	 * `zotero.group:<id>` whether that group library is switched on.
+	 */
+	getControlValue(key: string): unknown {
+		if (key.startsWith(GROUP_KEY)) return this.plugin.data.zotero.groups.some((group) => groupKey(group) === key);
+		if (key === "autoSync.interval") {
+			const hours = this.plugin.data.autoSync.intervalHours;
+			return hours === null ? "launch" : `h${hours}`;
+		}
+		const [head, sub] = key.split(".");
+		const value = (this.plugin.data as unknown as Record<string, unknown>)[head];
+		return sub === undefined ? value : (value as Record<string, unknown>)[sub];
+	}
+
+	/**
+	 * Stores a control's value (spec §2.3). The value already stored is no change: a toggle's
+	 * `setValue` fires its change again, and a re-render that sets would loop. A nested value replaces
+	 * its object rather than mutating it, as the rows always have: a running sync may hold the old one.
+	 * A key that names nothing in `data.json` is refused: writing it would change the file's shape.
+	 *
+	 * Then the key's side effect: an automatic-sync change re-arms the
+	 * timer, so it takes effect now rather than at the next launch; a Zotero connection switch draws the
+	 * page again, which is now about a different set of connections. The Readwise switch asks the line
+	 * again; another Readwise token forgets what readwise.io said about the old one and draws the page
+	 * again.
+	 */
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		if (key === "autoSync.interval") return this.setControlValue("autoSync.intervalHours", value === "launch" ? null : Number(String(value).slice(1)));
+		if (key.startsWith(GROUP_KEY)) return this.setZoteroGroup(key, value === true);
+		const [head, sub] = key.split(".");
+		const data = this.plugin.data as unknown as Record<string, unknown>;
+		if (!(head in data) || (sub !== undefined && !(sub in (data[head] as object)))) throw new Error(`Tagged Sync: no setting "${key}"`);
+		const stored = key in SET_RULES ? SET_RULES[key](String(value ?? "")) : value;
+		if (this.getControlValue(key) === stored) return;
+		// The next sync makes notes due if a switch still differs then (`settleMarginNotesChoice`,
+		// `settleZoteroSwitches`), so a switch knocked off and back on reads nothing again. A vault that
+		// has not recorded a value yet has the old one until then.
+		if (key === "marginNotes") this.plugin.data.marginNotesSynced ??= this.plugin.data.marginNotes;
+		if (key === "zotero.writeText" || key === "zotero.addRender") {
+			const { writeText, addRender } = this.plugin.data.zotero;
+			this.plugin.data.zoteroSwitchesSynced ??= { writeText, addRender };
+		}
+		data[head] = sub === undefined ? stored : { ...(data[head] as Record<string, unknown>), [sub]: stored };
+		if (TYPED_KEYS.has(key)) this.persistTyped();
+		else await this.plugin.saveData(this.plugin.data);
+		if (head === "autoSync") this.plugin.rearmAutoSyncInterval();
+		if (key === "zotero.useWeb" || key === "zotero.useLocal") this.update();
+		if (key === "readwise.push") this.refreshReadwiseLine?.();
+		if (key === "readwise.tokenSecret") {
+			// What readwise.io said was about the old token (spec §5); the redraw asks about the new one.
+			this.plugin.readwiseLastCheck = null;
+			this.update();
+		}
+	}
+
+	/** Settings may close with their own window; what was typed is written before they go. */
+	hide(): void {
+		this.persistTyped.run();
+		super.hide();
+	}
+
+	/**
+	 * Where this vault reads from, what it falls back to, and the two ways in: pairing and the cloud
+	 * account (spec §3.1). *Sync now* first, once there is something to sync from (spec P1 (a)): it
+	 * closes the setup path on one screen, and the palette was the only other way in.
+	 *
+	 * The sources come above the cloud account rather than beside it, because with two sources the
+	 * first question is which one is in use -- and the row a free user sees here is the only place the
 	 * direct-device feature explains itself before it is bought.
 	 */
-	private renderSources(containerEl: HTMLElement): void {
+	private connectionGroup(connected: boolean): SettingDefinitionGroup {
+		const data = this.plugin.data;
+		const items: SettingDefinition[] = [];
+		if (connected) {
+			items.push({
+				name: "Sync now",
+				desc: "Fetch tagged notebooks and write them into your vault.",
+				render: this.guarded("Sync now", (setting) => {
+					setting.addButton((button) =>
+						button
+							.setButtonText("Sync")
+							.setCta()
+							.onClick(() => this.plugin.syncNow()),
+					);
+				}),
+			});
+		}
+		items.push(
+			{
+				name: "Sync from",
+				// What the choice *means*, not where the device is: the address belongs to the device row
+				// below, and saying it twice makes the reader check whether the two agree.
+				desc:
+					data.primaryTransport === "ssh" ? "Read straight off the tablet. No reMarkable account is involved." : "Through your reMarkable account, as before.",
+				aliases: ["source", "SSH", "USB", "Wi-Fi", "cloud"],
+				render: this.guarded("Sync from", (setting) => this.renderSource(setting)),
+			},
+			{
+				name: "If that is not reachable",
+				desc: "Both sources hand this plugin the same content, so switching between them costs nothing and re-transcribes nothing.",
+				render: this.guarded("If that is not reachable", (setting) => this.renderFallback(setting)),
+			},
+		);
+		if (data.primaryTransport === "ssh" || data.fallbackTransport === "ssh") items.push(this.pairingRow());
+		items.push(...this.cloudRows());
+		return { type: "group", heading: "reMarkable connection", cls: "tagged-sync-group-connection", items };
+	}
+
+	private transportLabel(id: TransportId): string {
+		return id === "ssh" ? "Your reMarkable directly (USB or Wi-Fi)" : "reMarkable cloud";
+	}
+
+	private renderSource(setting: Setting): void {
 		const data = this.plugin.data;
 		const allowed = allowedTransports(this.plugin.entitlement());
-		const label = (id: TransportId): string => (id === "ssh" ? "Your reMarkable directly (USB or Wi-Fi)" : "reMarkable cloud");
-
-		// A heading, like every other group on this page. Without one these rows read as loose settings
-		// belonging to nothing, and once there are two sources and a fallback that is three or four of
-		// them in a row -- which is exactly where the eye needs somewhere to start.
-		new Setting(containerEl).setName("Where your notes come from").setHeading();
-
-		const source = new Setting(containerEl)
-			.setName("Sync from")
-			// What the choice *means*, not where the device is: the address belongs to the device row
-			// below, and saying it twice makes the reader check whether the two agree.
-			.setDesc(
-				data.primaryTransport === "ssh"
-					? "Read straight off the tablet. No reMarkable account is involved."
-					: "Through your reMarkable account, as before.",
-			);
-		source.addDropdown((dropdown) => {
+		setting.addDropdown((dropdown) => {
 			for (const id of ["cloud", "ssh"] as const) {
-				dropdown.addOption(id, allowed.includes(id) ? label(id) : `${label(id)} (Pro)`);
+				dropdown.addOption(id, allowed.includes(id) ? this.transportLabel(id) : `${this.transportLabel(id)} (Pro)`);
 				// Shown and disabled rather than hidden: a feature a free user cannot see is one they
 				// cannot decide to buy, and Obsidian saves a dropdown change the moment it is made.
 				if (!allowed.includes(id)) {
@@ -170,30 +369,26 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				data.primaryTransport = value as TransportId;
 				if (data.fallbackTransport === data.primaryTransport) data.fallbackTransport = null;
 				await this.plugin.saveData(data);
-				this.redraw();
+				this.update();
 			});
 		});
+	}
 
-		new Setting(containerEl)
-			.setName("If that is not reachable")
-			.setDesc(
-				"Both sources hand this plugin the same content, so switching between them costs nothing and re-transcribes nothing.",
-			)
-			.addDropdown((dropdown) => {
-				const other: TransportId = data.primaryTransport === "cloud" ? "ssh" : "cloud";
-				dropdown.addOption("none", "Stop and say so");
-				dropdown.addOption(other, `Try ${label(other)}`);
-				if (!allowed.includes(other)) dropdown.selectEl.options[1].disabled = true;
-				dropdown.setValue(data.fallbackTransport ?? "none");
-				dropdown.onChange(async (value) => {
-					data.fallbackTransport = value === "none" ? null : (value as TransportId);
-					await this.plugin.saveData(data);
-					this.redraw();
-				});
+	private renderFallback(setting: Setting): void {
+		const data = this.plugin.data;
+		const allowed = allowedTransports(this.plugin.entitlement());
+		setting.addDropdown((dropdown) => {
+			const other: TransportId = data.primaryTransport === "cloud" ? "ssh" : "cloud";
+			dropdown.addOption("none", "Stop and say so");
+			dropdown.addOption(other, `Try ${this.transportLabel(other)}`);
+			if (!allowed.includes(other)) dropdown.selectEl.options[1].disabled = true;
+			dropdown.setValue(data.fallbackTransport ?? "none");
+			dropdown.onChange(async (value) => {
+				data.fallbackTransport = value === "none" ? null : (value as TransportId);
+				await this.plugin.saveData(data);
+				this.update();
 			});
-
-		if (data.primaryTransport === "ssh" || data.fallbackTransport === "ssh") this.renderDevicePairing(containerEl);
-		this.renderCloudConnection(containerEl);
+		});
 	}
 
 	/**
@@ -202,86 +397,97 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * The address field is optional on purpose: the cable answers at a fixed address, so somebody who
 	 * has just plugged their tablet in should not have to go and look anything up.
 	 */
-	private renderDevicePairing(containerEl: HTMLElement): void {
+	private pairingRow(): SettingDefinition {
 		const ssh = this.plugin.data.ssh;
+		if (!isPaired(ssh)) return this.connectDeviceRow();
+		return {
+			name: "Your reMarkable",
+			desc: `Paired with root@${ssh.host} · host key pinned`,
+			render: this.guarded("Your reMarkable", (setting) => {
+				setting
+					.addButton((button) =>
+						// Offered here because it is the action every failure message asks for -- a refused key
+						// and a changed host key both end in "pair again", and both leave the address correct.
+						button.setButtonText("Re-pair").onClick(async () => {
+							// Carried into the form below rather than left in `data.ssh` alone, where it would be
+							// stored and invisible: somebody re-pairing a tablet they reached over Wi-Fi is doing
+							// it *because* it stopped answering, and making them go and find the address again at
+							// that moment is the worst time to ask. The cable's address is the field's default
+							// anyway, so there is nothing to carry for a cable-paired device.
+							this.deviceHost = ssh.host === USB_HOST ? "" : ssh.host;
+							this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
+							await this.plugin.saveData(this.plugin.data);
+							this.update();
+						}),
+					)
+					.addButton((button) =>
+						button.setButtonText("Forget device").onClick(async () => {
+							// The key stays on the tablet: removing it would need the password again, and this
+							// button is what somebody presses *because* they can no longer reach the device.
+							this.deviceHost = "";
+							this.plugin.data.ssh = { ...DEFAULT_SSH_SETTINGS };
+							this.plugin.data.sshHashes = {};
+							await this.plugin.saveData(this.plugin.data);
+							this.update();
+						}),
+					);
+			}),
+		};
+	}
 
-		if (isPaired(ssh)) {
-			new Setting(containerEl)
-				.setName("Your reMarkable")
-				.setDesc(`Paired with root@${ssh.host} · host key pinned`)
-				.addButton((button) =>
-					// Offered here because it is the action every failure message asks for -- a refused key
-					// and a changed host key both end in "pair again", and both leave the address correct.
-					button.setButtonText("Re-pair").onClick(async () => {
-						// Carried into the form below rather than left in `data.ssh` alone, where it would be
-						// stored and invisible: somebody re-pairing a tablet they reached over Wi-Fi is doing
-						// it *because* it stopped answering, and making them go and find the address again at
-						// that moment is the worst time to ask. The cable's address is the field's default
-						// anyway, so there is nothing to carry for a cable-paired device.
-						this.deviceHost = ssh.host === USB_HOST ? "" : ssh.host;
-						this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
-						await this.plugin.saveData(this.plugin.data);
-						this.redraw();
-					}),
-				)
-				.addButton((button) =>
-					button.setButtonText("Forget device").onClick(async () => {
-						// The key stays on the tablet: removing it would need the password again, and this
-						// button is what somebody presses *because* they can no longer reach the device.
-						this.deviceHost = "";
-						this.plugin.data.ssh = { ...DEFAULT_SSH_SETTINGS };
-						this.plugin.data.sshHashes = {};
-						await this.plugin.saveData(this.plugin.data);
-						this.redraw();
-					}),
-				);
-			return;
-		}
-
-		new Setting(containerEl)
-			.setName("Connect device")
-			.setDesc(
-				createFragment((desc: DocumentFragment) => {
+	private connectDeviceRow(): SettingDefinition {
+		return {
+			name: "Connect device",
+			get desc() {
+				return createFragment((desc: DocumentFragment) => {
 					desc.appendText("Connect the tablet by USB, or give its Wi-Fi address. ");
 					desc.appendText("The root password is on the tablet under Settings → Help → About → ");
 					desc.appendText("Copyrights and licenses. It is used once and never stored.");
-				}),
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder(`Address (default ${USB_HOST})`)
-					// So the field on screen and what a "Pair" would actually use are never two different
-					// things -- which is what an address carried in from "Re-pair", or left over from an
-					// attempt that failed, would otherwise be.
-					.setValue(this.deviceHost)
-					.onChange((value) => {
-						this.deviceHost = value.trim();
-					}),
-			)
-			.addText((text) => {
-				text.inputEl.type = "password";
-				text.setPlaceholder("Root password").onChange((value) => {
-					this.devicePassword = value;
+					// Before the attempt, not after it. On a Paper Pro or Paper Pure the answer to "nothing
+					// happens" is a factory reset, and nobody should meet that fact halfway through pairing --
+					// finding it out afterwards is the worst possible moment. Folded away so an rM2 owner, who
+					// needs none of it, is not made to read it; in the description, because a group has no
+					// loose text between its rows (spec P10).
+					const help = desc.createEl("details", {
+						cls: "tagged-sync-pairing-help",
+					});
+					help.createEl("summary", {
+						text: "What your reMarkable needs before this works",
+					});
+					for (const line of pairingGuidance("unknown")) help.createEl("p", { text: line });
 				});
-			})
-			.addButton((button) =>
-				button
-					.setButtonText("Pair")
-					.setCta()
-					.onClick(async () => {
-						button.setDisabled(true);
-						await this.pairDevice();
-						button.setDisabled(false);
-					}),
-			);
-
-		// Before the attempt, not after it. On a Paper Pro or Paper Pure the answer to "nothing
-		// happens" is a factory reset, and nobody should meet that fact halfway through pairing --
-		// finding it out afterwards is the worst possible moment. Folded away so an rM2 owner, who
-		// needs none of it, is not made to read it.
-		const help = containerEl.createEl("details", { cls: "tagged-sync-pairing-help" });
-		help.createEl("summary", { text: "What your reMarkable needs before this works" });
-		for (const line of pairingGuidance("unknown")) help.createEl("p", { text: line });
+			},
+			render: this.guarded("Connect device", (setting) => {
+				setting
+					.addText((text) =>
+						text
+							.setPlaceholder(`Address (default ${USB_HOST})`)
+							// So the field on screen and what a "Pair" would actually use are never two different
+							// things -- which is what an address carried in from "Re-pair", or left over from an
+							// attempt that failed, would otherwise be.
+							.setValue(this.deviceHost)
+							.onChange((value) => {
+								this.deviceHost = value.trim();
+							}),
+					)
+					.addText((text) => {
+						text.inputEl.type = "password";
+						text.setPlaceholder("Root password").onChange((value) => {
+							this.devicePassword = value;
+						});
+					})
+					.addButton((button) =>
+						button
+							.setButtonText("Pair")
+							.setCta()
+							.onClick(async () => {
+								button.setDisabled(true);
+								await this.pairDevice();
+								button.setDisabled(false);
+							}),
+					);
+			}),
+		};
 	}
 
 	/** One pairing attempt, and what to say about however it ended. */
@@ -331,85 +537,110 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			// one nobody asked to store, and the redraw is what makes the emptied field visible rather
 			// than leaving the box on screen full of a password the next "Pair" would no longer send.
 			this.devicePassword = "";
-			this.redraw();
+			this.update();
 		}
 	}
 
 	/** The cloud account: one-time code in, device token out. Unchanged by the second transport. */
-	private renderCloudConnection(containerEl: HTMLElement): void {
+	private cloudRows(): SettingDefinition[] {
 		const cloudStatus = this.plugin.cloudTransportStatus();
-		const connectionSetting = new Setting(containerEl)
+		const account: SettingDefinition = {
 			// "reMarkable connection" was unambiguous while there was one; beside a paired tablet it reads
 			// as though it might be either. This row is the account, and says so.
-			.setName("reMarkable cloud account")
-			.setDesc(cloudStatus.summary);
-
-		if (cloudStatus.connected) {
-			connectionSetting.addButton((button) =>
-				button.setButtonText("Disconnect").onClick(async () => {
-					await this.plugin.auth.disconnect();
-					this.redraw();
-				}),
-			);
-		} else {
-			this.code = "";
-			new Setting(containerEl)
-				.setName("Connect")
-				.setDesc(
-					createFragment((desc: DocumentFragment) => {
+			name: "reMarkable cloud account",
+			desc: cloudStatus.summary,
+			render: this.guarded("reMarkable cloud account", (setting) => {
+				if (!cloudStatus.connected) return;
+				setting.addButton((button) =>
+					button.setButtonText("Disconnect").onClick(async () => {
+						await this.plugin.auth.disconnect();
+						this.update();
+					}),
+				);
+			}),
+		};
+		if (cloudStatus.connected) return [account];
+		return [
+			account,
+			{
+				name: "Connect",
+				get desc() {
+					return createFragment((desc: DocumentFragment) => {
 						desc.appendText("Enter the one-time code from ");
 						desc.createEl("a", {
 							text: DEVICE_CONNECT_URL,
 							href: DEVICE_CONNECT_URL,
 						});
 						desc.appendText(".");
-					}),
-				)
-				.addText((text) =>
-					text.setPlaceholder("Eight-letter code").onChange((value) => {
-						this.code = value;
-					}),
-				)
-				.addButton((button) =>
-					button
-						.setButtonText("Connect")
-						.setCta()
-						.onClick(async () => {
-							try {
-								await this.plugin.auth.connect(this.code);
-								new Notice("Connected to reMarkable.");
-								this.redraw();
-							} catch (error) {
-								new Notice(explainError(error, "connect"), 10_000);
-							}
-						}),
-				);
-		}
+					});
+				},
+				render: this.guarded("Connect", (setting) => {
+					this.code = "";
+					setting
+						.addText((text) =>
+							text.setPlaceholder("Eight-letter code").onChange((value) => {
+								this.code = value;
+							}),
+						)
+						.addButton((button) =>
+							button
+								.setButtonText("Connect")
+								.setCta()
+								.onClick(async () => {
+									try {
+										await this.plugin.auth.connect(this.code);
+										new Notice("Connected to reMarkable.");
+										this.update();
+									} catch (error) {
+										new Notice(explainError(error, "connect"), 10_000);
+									}
+								}),
+						);
+				}),
+			},
+		];
 	}
 
 	/**
 	 * Pro in one place, low in the tab. The gated features carry a sentence and a pointer down here
 	 * rather than a buy button of their own: a row at the top would ask a free user to pay before
 	 * they have seen the plugin work, which is the one backlash trigger the research actually
-	 * measured. Actions stays last, because those links are read when something has gone wrong.
+	 * measured. Help stays last, because those links are read when something has gone wrong.
 	 */
-	private renderPro(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Tagged Sync Pro").setHeading();
-
+	private proGroup(): SettingDefinitionGroup {
 		const entitlement = this.plugin.entitlement();
 		const status = licenceStatusText(entitlement, this.plugin.data.licence);
-		const statusRow = new Setting(containerEl).setName(status.heading).setDesc(status.body);
-
-		if (entitlement.tier === "trial") {
-			const left = trialDaysLeft(this.plugin.data.licence, new Date());
-			statusRow.setDesc(`${status.body} ${left} day(s) left.`);
+		const items: SettingDefinition[] = [
+			{
+				name: status.heading,
+				desc: entitlement.tier === "trial" ? `${status.body} ${trialDaysLeft(this.plugin.data.licence, new Date())} day(s) left.` : status.body,
+				render: this.guarded(status.heading, (setting) => this.renderLicenceButtons(setting)),
+			},
+		];
+		// Where a bought key is pasted. Shown only while Pro is inactive, because a licensed vault has
+		// nothing to type here -- and a key field standing under an active licence invites someone to
+		// paste a second one over a working first. The money-back promise is its second sentence: a
+		// group has no loose text between rows (spec P11).
+		if (entitlement.tier !== "pro") {
+			items.push({
+				name: "Licence key",
+				desc: `Paste the key from your purchase page. ${MONEY_BACK_MESSAGE}`,
+				aliases: ["license"],
+				render: this.guarded("Licence key", (setting) => this.renderLicenceKeyField(setting)),
+			});
 		}
+		return { type: "group", heading: "Tagged Sync Pro", cls: "tagged-sync-group-pro", items };
+	}
 
+	/** The status row's buttons. Every one that changes the licence ends in `update()`: the "(Pro)" names everywhere depend on it. */
+	private renderLicenceButtons(statusRow: Setting): void {
+		const licenceRunning = this.plugin.entitlement().tier === "pro";
 		// One click, no key, no email. The trial is the only way a Windows or Linux user can judge
 		// cloud transcription before paying. There is deliberately no restart button -- one would turn
 		// the purchase into a donation -- and since 1.8 the start date comes signed from taggedsync.com,
-		// so deleting it by hand is not a restart either (`trial-ticket.ts`).
-		if (this.plugin.data.licence.trialStartedAt === null) {
+		// so deleting it by hand is not a restart either (`trial-ticket.ts`). A running licence has nothing
+		// to try: the trial would unlock what it already unlocks.
+		if (this.plugin.data.licence.trialStartedAt === null && !licenceRunning) {
 			statusRow.addButton((button) =>
 				button
 					.setButtonText("Start free trial")
@@ -429,16 +660,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							return;
 						}
 						await this.plugin.saveData(this.plugin.data);
-						this.redraw();
+						this.update();
 					}),
 			);
 		}
 
-		if (entitlement.tier !== "pro") {
-			statusRow.addButton((button) => button.setButtonText("Buy").onClick(() => window.open(PRO_BUY_URL)));
-		}
-
-		if (entitlement.tier === "pro") {
+		if (licenceRunning) {
 			statusRow.addButton((button) =>
 				button.setButtonText("Manage devices").onClick(() => window.open(PRO_PORTAL_URL)),
 			);
@@ -447,25 +674,17 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					await deactivateHere(this.plugin.data.licence, this.plugin.licenceApi);
 					this.plugin.data.licence = withoutLicence(this.plugin.data.licence);
 					await this.plugin.saveData(this.plugin.data);
-					this.redraw();
+					this.update();
 				}),
 			);
 		} else {
-			this.renderLicenceKeyField(containerEl);
-			containerEl.createDiv({ cls: "tagged-sync-note", text: MONEY_BACK_MESSAGE });
+			statusRow.addButton((button) => button.setButtonText("Buy").onClick(() => window.open(PRO_BUY_URL)));
 		}
 	}
 
-	/**
-	 * Where a bought key is pasted. Shown only while Pro is inactive, because a licensed vault has
-	 * nothing to type here -- and a key field standing under an active licence invites someone to
-	 * paste a second one over a working first.
-	 */
-	private renderLicenceKeyField(containerEl: HTMLElement): void {
+	private renderLicenceKeyField(setting: Setting): void {
 		let typed = "";
-		new Setting(containerEl)
-			.setName("Licence key")
-			.setDesc("Paste the key from your purchase page.")
+		setting
 			.addText((text) => text.onChange((value) => (typed = value)))
 			.addButton((button) =>
 				button.setButtonText("Activate").onClick(async () => {
@@ -480,111 +699,148 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.licence = result.state;
 					await this.plugin.saveData(this.plugin.data);
 					new Notice(activationMessage(result.outcome));
-					this.redraw();
+					this.update();
 				}),
 			);
 	}
 
-	/** Where a synced notebook lands and what it carries -- the two rows about the vault side. */
-	private renderVaultOutput(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Vault output").setHeading();
-
-		// Existing notes keep embedding the old path until their notebook next changes; moving the
-		// files is the user's call, so the description says when the setting takes effect.
-		new Setting(containerEl)
-			.setName("Attachments folder")
-			.setDesc("Vault folder for the rendered PDFs. Applies to notebooks synced from now on; already-synced files stay where they are.")
-			.addText((text) => {
-				// Don't hit data.json on every keystroke; the in-memory value updates immediately.
-				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				text
-					.setPlaceholder(DEFAULT_ATTACHMENTS_FOLDER)
-					.setValue(this.plugin.data.attachmentsFolder)
-					.onChange((value) => {
-						this.plugin.data.attachmentsFolder = value;
-						persist();
-					});
-			});
-
-		// Off by default (F20). Named for what the reader put on a PDF rather than for handwriting alone:
-		// since issue #247 it governs the text typed on a page added to a PDF as well (zotero map ticket 01).
-		new Setting(containerEl)
-			.setName("Your notes on PDFs")
-			.setDesc(
-				"What you wrote or typed on an annotated PDF, beside the text or on a page you added. Handwriting is " +
-					"transcribed where a transcription backend can run.",
-			)
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.data.marginNotes).onChange(async (value) => {
-					this.plugin.data.marginNotes = value;
-					// The device has not changed, so nothing would re-run without this: the switch decides
-					// what a note *contains*, and every already-synced note has to be rewritten to match.
-					this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex);
-					await this.plugin.saveData(this.plugin.data);
-				}),
-			);
-
+	/** Where a synced notebook lands and what it carries -- the rows about the vault side (spec §3.3). */
+	private vaultGroup(): SettingDefinitionGroup {
 		// Shown and disabled for free users rather than hidden -- the same rule as the transport
 		// dropdown above: a feature a free user cannot see is one they cannot want.
 		const frontmatterUnlocked = frontmatterAllowed(this.plugin.entitlement());
-		new Setting(containerEl)
-			.setName(frontmatterUnlocked ? "Frontmatter properties" : "Frontmatter properties (Pro)")
-			.setDesc(
-				frontmatterUnlocked
-					? "Write each note's reMarkable tags and metadata (folder, modified, type, …) into its frontmatter, for Dataview and Bases. " +
+		const frontmatterName = frontmatterUnlocked ? "Frontmatter properties" : "Frontmatter properties (Pro)";
+		return {
+			type: "group",
+			heading: "Vault output",
+			cls: "tagged-sync-group-vault",
+			items: [
+				{
+					// Existing notes keep embedding the old path until their notebook next changes; moving the
+					// files is the user's call, so the description says when the setting takes effect.
+					name: "Attachments folder",
+					desc: "Vault folder for the rendered PDFs. Applies to notebooks synced from now on; already-synced files stay where they are.",
+					aliases: ["PDF folder", "render"],
+					// A folder that does not exist yet is accepted and stored as typed (ticket 17's F3): it
+					// is created at the first sync.
+					control: {
+						type: "folder",
+						key: "attachmentsFolder",
+						placeholder: DEFAULT_ATTACHMENTS_FOLDER,
+						includeRoot: false,
+					},
+				},
+				{
+					// Off by default (F20). Named for what the reader put on a PDF rather than for handwriting
+					// alone: since issue #247 it governs the text typed on a page added to a PDF as well
+					// (zotero map ticket 01).
+					name: "Your notes on PDFs",
+					desc:
+						"What you wrote or typed on an annotated PDF, beside the text or on a page you added. Handwriting is " +
+						"transcribed where a transcription backend can run.",
+					control: { type: "toggle", key: "marginNotes" },
+				},
+				{
+					name: frontmatterName,
+					desc: frontmatterUnlocked
+						? "Write each note's reMarkable tags and metadata (folder, modified, type, …) into its frontmatter, for Dataview and Bases. " +
 							"Turning this on writes the properties into every synced note; turning it off removes them again. Your own frontmatter lines are never touched."
-					: "Write each note's reMarkable tags and metadata into its frontmatter, for Dataview and Bases. Part of Tagged Sync Pro -- see below.",
-			)
-			.addToggle((toggle) => {
-				toggle.setValue(this.plugin.data.frontmatter).setDisabled(!frontmatterUnlocked);
-				toggle.onChange(async (value) => {
-					// A click that changes nothing (see below) must not run a pass.
-					if (value === this.plugin.data.frontmatter) return;
-					// The plugin runs the backfill/cleanup pass and persists only what actually happened, so
-					// the toggle is set back to the outcome instead of assuming the click succeeded. setValue
-					// fires this handler again (read out of obsidian-1.13.7's app.js); the guard above is
-					// what keeps a refused enable from turning into a spurious cleanup pass.
-					await this.plugin.setFrontmatterEnabled(value);
-					toggle.setValue(this.plugin.data.frontmatter);
-				});
-			});
+						: "Write each note's reMarkable tags and metadata into its frontmatter, for Dataview and Bases. Part of Tagged Sync Pro -- see below.",
+					// Drawn by our code, not a control: a refused switch has to be set back to what happened,
+					// and Obsidian leaves a control showing what was clicked (ticket 17's F5).
+					render: this.guarded(frontmatterName, (setting) => {
+						setting.addToggle((toggle) => {
+							toggle.setValue(this.plugin.data.frontmatter).setDisabled(!frontmatterUnlocked);
+							toggle.onChange(async (value) => {
+								// A click that changes nothing (see below) must not run a pass.
+								if (value === this.plugin.data.frontmatter) return;
+								// The plugin runs the backfill/cleanup pass and persists only what actually happened, so
+								// the toggle is set back to the outcome instead of assuming the click succeeded. setValue
+								// fires this handler again (read out of obsidian-1.13.7's app.js); the guard above is
+								// what keeps a refused enable from turning into a spurious cleanup pass.
+								await this.plugin.setFrontmatterEnabled(value);
+								toggle.setValue(this.plugin.data.frontmatter);
+							});
+						});
+					}),
+				},
+			],
+		};
 	}
 
 	/**
-	 * Zotero: the two connections, and what is connected right now (spec §2.1).
+	 * Zotero, a page of its own under *Integrations* (settings-redesign spec §6, 05 #5): the connection
+	 * group without a heading, then *Libraries*, *Into Zotero* and *Send to your tablet*. Each connection
+	 * has a switch (asked for in the desk test of 2026-09-13): whether anything goes over the internet is
+	 * then one visible thing, not "is the key field empty". Its entry on the root says what is set up
+	 * (spec §5), read anew each time the root is drawn (ticket 17's F7).
 	 *
-	 * *Zotero* with the connection line, then one heading per connection -- *Zotero cloud* with its
-	 * switch and key, *Zotero local* with its switch -- then *Zotero libraries*, *Into Zotero* (see
-	 * {@link renderIntoZotero}) and *Zotero on the tablet* for the sending rows. Each connection has a
-	 * switch (asked for in the desk test of 2026-09-13): whether anything goes over the internet is then
-	 * one visible thing, not "is the key field empty". The key row is shown only while the cloud switch
-	 * is on.
-	 *
-	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (spec §5). The Pro rows
-	 * -- the desktop app, the two *Into Zotero* switches and Send over SSH -- are shown disabled with
-	 * "(Pro)", the same rule as the transport dropdown and the frontmatter toggle above: a feature a free
-	 * user cannot see is one they cannot decide to buy.
+	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (Zotero spec §5). The
+	 * Pro rows -- the desktop app, the libraries, the two *Into Zotero* switches and Send over SSH -- are
+	 * shown disabled with "(Pro)", the same rule as the transport dropdown and the frontmatter toggle: a
+	 * feature a free user cannot see is one they cannot decide to buy.
 	 */
-	private renderZotero(containerEl: HTMLElement): void {
+	private zoteroPage(): SettingDefinitionPage {
 		const pro = zoteroProAllowed(this.plugin.entitlement());
-		const settings = this.plugin.data.zotero;
+		const entry = () => zoteroPageEntry(this.plugin.data.zotero, this.plugin.entitlement());
+		return {
+			type: "page",
+			name: "Zotero",
+			displayValue: this.guardedValue("Zotero", "", () => entry().value),
+			status: this.guardedValue<"warning" | null>("Zotero", null, () => entry().status),
+			items: [this.zoteroConnectionGroup(pro), this.zoteroLibrariesGroup(pro), this.intoZoteroGroup(pro), this.zoteroSendGroup(pro)],
+		};
+	}
 
-		new Setting(containerEl).setName("Zotero").setHeading();
-
-		const status = new Setting(containerEl)
-			.setName("Connection")
-			.setDesc(
-				pro
+	/**
+	 * The line, the two switches and the key (spec §6.1). Either switch changes what the whole page is
+	 * about, so it ends in `update()` ({@link setControlValue}); the key row is in the page only while
+	 * zotero.org is switched on, and a key pasted earlier stays in `data.json` for the day it is again.
+	 */
+	private zoteroConnectionGroup(pro: boolean): SettingDefinitionGroup {
+		const items: SettingDefinition[] = [
+			{
+				name: "Connection",
+				desc: pro
 					? "Either connection is enough on its own. The desktop app works offline and knows where your PDFs are; zotero.org works with Zotero closed."
-					: "zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro -- see below.",
-			);
-		// The four states of §2.1, and the client is what says which one it is -- it knows what answered,
-		// which is not the same question as what is configured. Asked at draw and again after the key
-		// changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading
-		// "Connected via web." until the tab was reopened). Each probe is numbered, so a slow answer
-		// never lands on top of a newer one; a render that has been superseded drops its own answer on
-		// the floor (`redraw()` empties the container and draws a new one).
-		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
+					: "zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro.",
+				render: this.guarded("Connection", (setting) => this.renderZoteroLine(setting)),
+			},
+			{
+				name: "Use zotero.org",
+				desc:
+					"Your library is read over the internet, at zotero.org, and with write-back your highlights and notes are written there, and the render if you add it. " +
+					"Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.",
+				control: { type: "toggle", key: "zotero.useWeb" },
+			},
+		];
+		if (this.plugin.data.zotero.useWeb) {
+			items.push({
+				name: "Zotero API key",
+				desc: "From zotero.org → Settings → Security → New Key (Applications). Needs read and write access to your personal library. Stored locally in this vault's plugin data.",
+				aliases: ["token"],
+				render: this.guarded("Zotero API key", (setting) => this.renderZoteroKey(setting)),
+			});
+		}
+		items.push({
+			name: pro ? "Use the Zotero desktop app" : "Use the Zotero desktop app (Pro)",
+			desc:
+				'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). ' +
+				"Zotero asks your permission the first time this plugin writes something; choose Always Allow.",
+			control: { type: "toggle", key: "zotero.useLocal", disabled: !pro },
+		});
+		return { type: "group", cls: "tagged-sync-group-zotero-connection", items };
+	}
+
+	/**
+	 * The four states of §2.1, and the client is what says which one it is -- it knows what answered,
+	 * which is not the same question as what is configured. Asked at draw and again after the key
+	 * changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading "Connected
+	 * via web." until the tab was reopened). Each probe is numbered, so a slow answer never lands on top
+	 * of a newer one, and tearing the row down outdates the last one (spec §2.8).
+	 */
+	private renderZoteroLine(setting: Setting): () => void {
+		const line = setting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		// Coloured like the vision verdict under Model (asked for in the desk test of 2026-09-13): the
 		// theme's own success and error tones, through a variable, so the answer reads at a glance.
 		const paint = (text: string, color: string) => {
@@ -592,7 +848,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			line.style.color = color;
 		};
 		let probe = 0;
-		const refreshStatus = () => {
+		const refresh = () => {
 			const client = this.plugin.zoteroClient();
 			const mine = ++probe;
 			if (client === null) {
@@ -606,117 +862,71 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				if (mine === probe) paint(reached.summary, reached.web || reached.local ? "var(--text-success)" : "var(--text-error)");
 			});
 		};
-		refreshStatus();
-		const recheck = debounce(refreshStatus, 600, true);
-		// The render switch below needs zotero.org, and the two rows that set it up come first: they
-		// update that row in place, set once it is drawn.
-		let renderNeedsWeb = (): void => {};
+		refresh();
+		this.refreshZoteroLine = refresh;
+		return () => {
+			probe++;
+			// Before the row is drawn again (1.15.0's app.js, as the fake renderer models it), so the next draw sets its own.
+			this.refreshZoteroLine = null;
+		};
+	}
 
-		new Setting(containerEl).setName("Zotero cloud").setHeading();
-
-		const cloud = new Setting(containerEl)
-			.setName("Use zotero.org")
-			.setDesc(
-				"Your library is read over the internet, at zotero.org, and with write-back your highlights and notes are written there, and the render if you add it. " +
-					"Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.",
-			);
-
-		const keyRow = new Setting(containerEl)
-			.setName("Zotero API key")
-			.setDesc("From zotero.org → Settings → Security → New Key (Applications). Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
-			.addText((text) => {
-				text.inputEl.type = "password";
-				// Debounced like the attachments folder: the in-memory value is current immediately, and
-				// `data.json` is not written on every keystroke of a 24-character key.
-				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				text.setValue(settings.apiKey ?? "").onChange((value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, apiKey: value === "" ? null : value };
-					persist();
-					recheck();
-					renderNeedsWeb();
-				});
+	/**
+	 * Typed into without a redraw (spec §6.1, P15): a redraw under the field takes its focus. A key that
+	 * makes zotero.org a connection, or stops it being one, opens or shuts the render switch at once; the
+	 * sentences that depend on it follow when the field is left.
+	 */
+	private renderZoteroKey(setting: Setting): void {
+		const drawnWith = webConfigured(this.plugin.data.zotero);
+		setting.addText((text) => {
+			text.inputEl.type = "password";
+			text.setValue(this.plugin.data.zotero.apiKey ?? "").onChange(async (value) => {
+				const before = webConfigured(this.plugin.data.zotero);
+				await this.setControlValue("zotero.apiKey", value);
+				this.recheckZotero();
+				if (webConfigured(this.plugin.data.zotero) !== before) this.refreshDomState();
 			});
-		// The key row belongs to the switch: shown while it is on, hidden -- not removed -- while it is
-		// off, so a pasted key stays where it was for the day the switch is turned back on.
-		keyRow.settingEl.toggle(settings.useWeb);
-
-		cloud.addToggle((toggle) => {
-			toggle.setValue(settings.useWeb);
-			toggle.onChange(async (value) => {
-				this.plugin.data.zotero = { ...this.plugin.data.zotero, useWeb: value };
-				await this.plugin.saveData(this.plugin.data);
-				keyRow.settingEl.toggle(value);
-				// The status line is now about a different set of connections.
-				refreshStatus();
-				renderNeedsWeb();
+			text.inputEl.addEventListener("blur", () => {
+				if (webConfigured(this.plugin.data.zotero) === drawnWith) return;
+				// The redraw asks the line itself: one probe per change (spec §2.8).
+				this.recheckZotero.cancel();
+				this.update();
 			});
 		});
+	}
 
-		new Setting(containerEl).setName("Zotero local").setHeading();
-
-		new Setting(containerEl)
-			.setName(pro ? "Use the Zotero desktop app" : "Use the Zotero desktop app (Pro)")
-			.setDesc(
-				'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). ' +
-					"Zotero asks your permission the first time this plugin writes something; choose Always Allow.",
-			)
-			.addToggle((toggle) => {
-				toggle.setValue(settings.useLocal).setDisabled(!pro);
-				toggle.onChange(async (value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
-					await this.plugin.saveData(this.plugin.data);
-					// Redrawn, because the status line above is now about a different set of connections.
-					this.redraw();
-				});
-			});
-
-		this.renderZoteroLibraries(containerEl, pro);
-		renderNeedsWeb = this.renderIntoZotero(containerEl, pro);
-
-		new Setting(containerEl).setName("Zotero on the tablet").setHeading();
-
-		new Setting(containerEl)
-			.setName("Tablet folder for sent PDFs")
-			.setDesc("Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.")
-			.addText((text) => {
-				text.setPlaceholder(DEFAULT_SEND_FOLDER);
-				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				text.setValue(settings.folder).onChange((value) => {
-					// Blank is the default rather than a folder with no name: a document put at the root of
-					// the tablet is one the user has to go looking for.
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, folder: value.trim() === "" ? DEFAULT_SEND_FOLDER : value.trim() };
-					persist();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName("Send tag in Zotero")
-			.setDesc(
-				"Tag a paper with it in Zotero, then run Send tagged Zotero papers to reMarkable: every paper carrying the tag goes to your tablet, " +
-					"in the folder above, without a sync tag -- tag it on the tablet when you want it back. Tag the paper, not the PDF. No sync sends; only that command does.",
-			)
-			.addText((text) => {
-				text.setPlaceholder(DEFAULT_SEND_TAG);
-				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				text.setValue(settings.sendTag).onChange((value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendTag: value.trim() };
-					persist();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)")
-			// The spec's own wording, and it is here rather than in a notice afterwards because it is the
-			// one thing about this plugin that interrupts the person holding the tablet. They agree to it
-			// once, in advance, rather than finding out when their page closes.
-			.setDesc(`${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`)
-			.addToggle((toggle) => {
-				toggle.setValue(settings.sendOverSsh).setDisabled(!pro);
-				toggle.onChange(async (value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendOverSsh: value };
-					await this.plugin.saveData(this.plugin.data);
-				});
-			});
+	/**
+	 * *Send to your tablet* (spec §6.4): the rows that put a paper on the tablet. The folder and the tag
+	 * are trimmed when stored ({@link SET_RULES}).
+	 */
+	private zoteroSendGroup(pro: boolean): SettingDefinitionGroup {
+		return {
+			type: "group",
+			heading: "Send to your tablet",
+			cls: "tagged-sync-group-zotero-send",
+			items: [
+				{
+					name: "Tablet folder for sent PDFs",
+					desc: "Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.",
+					control: { type: "text", key: "zotero.folder", placeholder: DEFAULT_SEND_FOLDER },
+				},
+				{
+					name: "Send tag in Zotero",
+					desc:
+						"Tag a paper with it in Zotero, then run Send tagged Zotero papers to reMarkable: every paper carrying the tag goes to your tablet, " +
+						"in the folder above, without a sync tag -- tag it on the tablet when you want it back. Tag the paper, not the PDF. No sync sends; only that command does.",
+					control: { type: "text", key: "zotero.sendTag", placeholder: DEFAULT_SEND_TAG },
+				},
+				{
+					name: pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)",
+					// The spec's own wording, and it is here rather than in a notice afterwards because it is the
+					// one thing about this plugin that interrupts the person holding the tablet. They agree to it
+					// once, in advance, rather than finding out when their page closes.
+					desc: `${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`,
+					control: { type: "toggle", key: "zotero.sendOverSsh", disabled: !pro },
+				},
+			],
+		};
 	}
 
 	/**
@@ -725,88 +935,96 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * The render is not write-back (the glossary's write-back is text), so the heading says neither.
 	 *
 	 * Pro rows shown shut to a free vault, like the desktop-app switch. The render reaches Zotero over
-	 * zotero.org only (ticket 04 #1), so its switch is shut without that connection and says so; the
-	 * returned function re-reads that whenever the cloud rows above change.
+	 * zotero.org only (ticket 04 #1), so its switch is shut without that connection, asked again as the
+	 * key is typed, and says so in a sentence the connection rows' `update()`s choose (spec P15).
 	 *
-	 * Switching either one on makes the Zotero-linked documents due once (§10 P7): nothing changed on
-	 * the tablet, and without it the switch would wait for a change before anything reached Zotero.
+	 * Switching either one on makes the Zotero-linked documents due once ({@link setControlValue}).
 	 */
-	private renderIntoZotero(containerEl: HTMLElement, pro: boolean): () => void {
-		new Setting(containerEl).setName("Into Zotero").setHeading();
-
-		const save = async (key: "writeText" | "addRender", on: boolean): Promise<void> => {
-			this.plugin.data.zotero = { ...this.plugin.data.zotero, [key]: on };
-			if (on) this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex, linkedDocumentIds(this.plugin.data.zoteroLinks));
-			await this.plugin.saveData(this.plugin.data);
-		};
-
-		new Setting(containerEl)
-			.setName(pro ? "Write text to Zotero" : "Write text to Zotero (Pro)")
-			.setDesc(
-				"Your tablet highlights become Zotero annotations, with your margin notes as their comments, and each page you added to a PDF " +
-					"becomes a note under the paper. Everything carries the tag tagged-sync. Switched off, nothing new is written and what is " +
-					"already in Zotero stays; filter by the tag in Zotero to remove it.",
-			)
-			.addToggle((toggle) => {
-				toggle.setValue(this.plugin.data.zotero.writeText).setDisabled(!pro);
-				toggle.onChange((value) => save("writeText", value));
-			});
-
+	private intoZoteroGroup(pro: boolean): SettingDefinitionGroup {
+		const renderName = pro ? "Add the render to Zotero" : "Add the render to Zotero (Pro)";
 		const renderDesc =
 			'Uploads the PDF as it looks on your tablet, ink and all and searchable, to Zotero Storage as an attachment "Annotated PDF" ' +
 			"under the paper. Your handwriting then leaves this machine for zotero.org and counts against your storage there. Only " +
 			"documents tagged as a whole, in your personal library. If your Zotero files sync over WebDAV, leave this off.";
-		let renderToggle: ToggleComponent | undefined;
-		const renderRow = new Setting(containerEl)
-			.setName(pro ? "Add the render to Zotero" : "Add the render to Zotero (Pro)")
-			.addToggle((toggle) => {
-				renderToggle = toggle.setValue(this.plugin.data.zotero.addRender);
-				toggle.onChange((value) => save("addRender", value));
-			});
-		const needsWeb = (): void => {
-			const web = webConfigured(this.plugin.data.zotero);
-			renderRow.setDesc(web ? renderDesc : `Needs a zotero.org connection. ${renderDesc}`);
-			renderToggle?.setDisabled(!pro || !web);
+		return {
+			type: "group",
+			heading: "Into Zotero",
+			cls: "tagged-sync-group-zotero-into",
+			items: [
+				{
+					name: pro ? "Write text to Zotero" : "Write text to Zotero (Pro)",
+					desc:
+						"Your tablet highlights become Zotero annotations, with your margin notes as their comments, and each page you added to a PDF " +
+						"becomes a note under the paper. Everything carries the tag tagged-sync. Switched off, nothing new is written and what is " +
+						"already in Zotero stays; filter by the tag in Zotero to remove it.",
+					control: { type: "toggle", key: "zotero.writeText", disabled: !pro },
+				},
+				{
+					name: renderName,
+					desc: webConfigured(this.plugin.data.zotero) ? renderDesc : `Needs a zotero.org connection. ${renderDesc}`,
+					control: {
+						type: "toggle",
+						key: "zotero.addRender",
+						disabled: this.guardedValue(renderName, true, () => !pro || !webConfigured(this.plugin.data.zotero)),
+					},
+				},
+				{
+					name: "What leaves your machine",
+					desc:
+						"Your handwriting never does, unless you switch on Add the render to Zotero. With Write text to Zotero, the text of your " +
+						"highlights, margin notes and added pages is written into your own Zotero library -- and to zotero.org, if that is the " +
+						"connection carrying it.",
+				},
+			],
 		};
-		needsWeb();
-
-		new Setting(containerEl)
-			.setName("What leaves your machine")
-			.setDesc(
-				"Your handwriting never does, unless you switch on Add the render to Zotero. With Write text to Zotero, the text of your " +
-					"highlights, margin notes and added pages is written into your own Zotero library -- and to zotero.org, if that is the " +
-					"connection carrying it.",
-			);
-		return needsWeb;
 	}
 
-	/** What `client.groups()` last answered while this tab was open, or `null` before it has. See {@link renderZoteroLibraries}. */
+	/** What `client.groups()` last answered while this tab was open, or `null` before it has. See {@link zoteroLibrariesGroup}. */
 	private zoteroGroups: ZoteroGroup[] | null = null;
 
 	/**
-	 * The libraries (ticket 26): one switch per group library, all off until switched on by name
-	 * (the personal library is always read and needs no row) -- a group is other people's work, and what write-back puts
-	 * there is visible to everyone in it, which the row says.
+	 * The libraries (ticket 26, spec §6.2): one switch per group library, all off until switched on by
+	 * name (the personal library is always read and needs no row) -- a group is other people's work, and
+	 * what write-back puts there is visible to everyone in it, which the row says.
 	 *
-	 * The groups are Zotero's to name, so they are asked for when the tab is drawn and the tab is
-	 * drawn again once the answer changes what it would show. Rows are drawn from what is *stored*
-	 * as well as from what was found: a group switched on stays a row while Zotero is closed, so it
-	 * can be switched off again, and the name stored beside its id is what the row and the note
-	 * call it meanwhile. Pro (§5), and shown shut to a free vault like the desktop-app switch.
+	 * The groups are Zotero's to name, so they are asked for when the status row is drawn and the page
+	 * is drawn again once the answer changes what it would show. Rows come from what is *stored* as well
+	 * as from what was found: a group switched on stays a row while Zotero is closed, so it can be
+	 * switched off again, and the name stored beside its id is what the row and the note call it
+	 * meanwhile. Switched-on groups first, in the order they were switched on, then the rest as Zotero
+	 * lists them. Pro (§5), and shown shut to a free vault like the desktop-app switch.
 	 */
-	private renderZoteroLibraries(containerEl: HTMLElement, pro: boolean): void {
-		new Setting(containerEl).setName("Zotero libraries").setHeading();
-
-		const groupsRow = new Setting(containerEl)
-			.setName(pro ? "Group libraries" : "Group libraries (Pro)")
-			.setDesc(
-				"A group you switch on is searched, sent from and, with write-back, written into like your own library. " +
+	private zoteroLibrariesGroup(pro: boolean): SettingDefinitionGroup {
+		const name = pro ? "Group libraries" : "Group libraries (Pro)";
+		const items: SettingDefinition[] = [
+			{
+				name,
+				desc:
+					"A group you switch on is searched, sent from and, with write-back, written into like your own library. " +
 					"Highlights written into a group library are visible to everyone in that group.",
-			);
-		const status = groupsRow.descEl.createDiv({ cls: "tagged-sync-verdict" });
+				render: this.guarded(name, (setting) => this.renderGroupsStatus(setting, pro)),
+			},
+		];
+		if (pro) {
+			const enabled = this.plugin.data.zotero.groups;
+			const found = this.zoteroGroups;
+			for (const group of [...enabled, ...(found ?? []).filter((candidate) => !enabled.some((on) => on.id === candidate.id))]) {
+				items.push({
+					name: group.name,
+					desc: found !== null && !found.some((candidate) => candidate.id === group.id) ? "Not listed by Zotero right now; switched on earlier." : "",
+					control: { type: "toggle", key: groupKey(group) },
+				});
+			}
+		}
+		return { type: "group", heading: "Libraries", cls: "tagged-sync-group-zotero-libraries", items };
+	}
+
+	/** The status under *Group libraries*, and the lookup that fills the rows below it. */
+	private renderGroupsStatus(setting: Setting, pro: boolean): void {
+		const status = setting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		if (!pro) {
 			// Shut like the desktop-app switch: a free vault sees the row as a Pro row, not as a bare paragraph.
-			groupsRow.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
+			setting.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
 			return;
 		}
 
@@ -822,100 +1040,210 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.zoteroGroups = found;
 					// Drawn again only when the answer adds a row: the same list twice is not a reason to
 					// pull the screen out from under a person reading it.
-					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.redraw();
+					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.update();
 				},
 				(error: unknown) => status.setText(`Could not list your groups: ${describeZoteroError(error)}`),
 			);
 		} else if (this.zoteroGroups.length === 0 && enabled.length === 0) {
 			status.setText("You are in no group.");
 		}
-
-		// Switched-on groups first, in the order they were switched on, then the rest as Zotero lists them.
-		const rows = [...enabled, ...(this.zoteroGroups ?? []).filter((group) => !enabled.some((on) => on.id === group.id))];
-		for (const group of rows) {
-			const on = enabled.some((candidate) => candidate.id === group.id);
-			new Setting(containerEl)
-				.setName(group.name)
-				.setDesc(this.zoteroGroups !== null && !this.zoteroGroups.some((found) => found.id === group.id) ? "Not listed by Zotero right now; switched on earlier." : "")
-				.addToggle((toggle) => {
-					toggle.setValue(on);
-					toggle.onChange(async (value) => {
-						const others = this.plugin.data.zotero.groups.filter((candidate) => candidate.id !== group.id);
-						this.plugin.data.zotero = { ...this.plugin.data.zotero, groups: value ? [...others, group] : others };
-						await this.plugin.saveData(this.plugin.data);
-					});
-				});
-		}
 	}
 
 	/**
-	 * Closes the setup path on one screen: connect → discover → map → sync, with no README. Sync was
-	 * reachable only from the command palette, and the plugin registers no ribbon icon.
+	 * `zotero.group:<id>` switched (spec §6.2): on, the group joins the stored list with the name Zotero
+	 * gave it; off, it leaves. A group neither stored nor listed has no row, so it is no setting.
 	 */
-	private renderActions(containerEl: HTMLElement, connected: boolean): void {
-		new Setting(containerEl).setName("Actions").setHeading();
-
-		if (connected) {
-			new Setting(containerEl)
-				.setName("Sync now")
-				.setDesc("Fetch tagged notebooks and write them into your vault.")
-				.addButton((button) =>
-					button
-						.setButtonText("Sync")
-						.setCta()
-						.onClick(() => this.plugin.syncNow()),
-				);
-		}
-
-		new Setting(containerEl)
-			.setName("Report a problem")
-			.setDesc(
-				createFragment((desc: DocumentFragment) => {
-					desc.appendText("Copy your setup details, then open an issue at ");
-					desc.createEl("a", { text: "GitHub", href: ISSUES_URL });
-					desc.appendText(" and paste them in. Nothing is sent from here.");
-				}),
-			)
-			.addButton((button) =>
-				button.setButtonText("Copy diagnostics").onClick(async () => {
-					await navigator.clipboard.writeText(
-						buildDiagnostics({
-							pluginVersion: this.plugin.manifest.version,
-							obsidianVersion: apiVersion,
-							platform: Platform.isMacOS ? "macOS" : Platform.isWin ? "Windows" : Platform.isLinux ? "Linux" : "other",
-							visionAvailability: visionUnavailableReason() ?? "available",
-							backend: this.plugin.data.ocrBackend,
-							visionRevision: visionRunStats.revision,
-							unreadableInkRegions: visionRunStats.unreadableInkRegions,
-							reusedPageTranscriptions: this.plugin.lastPageTranscriptions,
-							textLayer: this.plugin.lastTextLayer,
-							ocrTally: this.plugin.lastOcrTally,
-							pendingOcrRetries: pendingOcrRetries(this.plugin.data.syncIndex),
-							mappedTagCount: Object.keys(this.plugin.data.tagFolderMap).length,
-							lastSyncAt: this.plugin.data.lastSyncAt,
-							lastSyncError: this.plugin.lastSyncError,
-						}),
-					);
-					new Notice("Diagnostics copied to the clipboard.");
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Request a feature")
-			.setDesc(
-				createFragment((desc: DocumentFragment) => {
-					desc.appendText("Suggest a feature on ");
-					desc.createEl("a", { text: "GitHub", href: FEATURE_REQUEST_URL });
-					desc.appendText(" or vote on ");
-					desc.createEl("a", { text: "existing requests", href: FEATURE_VOTING_URL });
-					desc.appendText(" with a 👍 reaction.");
-				}),
-			);
+	private async setZoteroGroup(key: string, on: boolean): Promise<void> {
+		const zotero = this.plugin.data.zotero;
+		const group = [...zotero.groups, ...(this.zoteroGroups ?? [])].find((candidate) => groupKey(candidate) === key);
+		if (group === undefined) throw new Error(`Tagged Sync: no setting "${key}"`);
+		if (this.getControlValue(key) === on) return;
+		const others = zotero.groups.filter((candidate) => candidate.id !== group.id);
+		this.plugin.data.zotero = { ...zotero, groups: on ? [...others, group] : others };
+		await this.plugin.saveData(this.plugin.data);
 	}
 
-	private renderOcrSettings(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Transcription").setHeading();
+	/**
+	 * Readwise (Readwise spec §2, settings-redesign spec §7), built like Zotero: a live Connection line,
+	 * the Pro switch, the token and the round-trip hint, in one group without a heading. Shown to every
+	 * vault, the switch shut with "(Pro)" to a free one.
+	 *
+	 * The token is a Keychain entry, which this computer has or has not: `data.json` holds only the
+	 * entry's name, and the token is read when the line asks readwise.io. Choosing another entry draws
+	 * the page again ({@link setControlValue}): the line and *Start over* are about that token.
+	 */
+	private readwisePage(): SettingDefinitionPage {
+		const pro = readwiseProAllowed(this.plugin.entitlement());
+		const entry = () => readwisePageEntry(this.plugin.data, this.plugin.entitlement(), this.plugin.readwiseLastCheck, () => this.plugin.readwiseToken());
+		const items: SettingDefinition[] = [
+			{ name: "Connection", render: this.guarded("Connection", (setting) => this.renderReadwiseLine(setting)) },
+			{
+				name: pro ? "Push highlights to Readwise" : "Push highlights to Readwise (Pro)",
+				desc:
+					"Your highlights and margin notes become highlights in your Readwise library, one book or article per document, and come up in your Daily Review. " +
+					"The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access " +
+					"(Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.",
+				// Switching on needs nothing more here: the next sync starts the backfill (Readwise spec §5).
+				control: { type: "toggle", key: "readwise.push", disabled: !pro },
+			},
+			{
+				name: "Readwise access token",
+				desc: "From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.",
+				aliases: ["API key"],
+				control: { type: "secret", key: "readwise.tokenSecret" },
+			},
+			{
+				name: "Readwise's own Obsidian plugin",
+				desc:
+					"If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, each highlight linking to your note. " +
+					"To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book.",
+			},
+		];
+		// Only while stopped, and on a computer with a token to start over with: it is the one way out once
+		// neither token clears the clash (ticket 20, option C).
+		if (this.plugin.data.readwiseAccountClash && this.plugin.readwiseToken() !== null) {
+			const name = "Start over with this computer's token";
+			items.push({
+				name,
+				desc:
+					"Forgets what was pushed to Readwise; the next sync pushes every document again, into the account of this computer's token. " +
+					"Books you deleted in Readwise come back, and your margin notes go to your transcription backend again.",
+				render: this.guarded(name, (setting) => {
+					setting.addButton((button) =>
+						button
+							.setButtonText("Start over")
+							.setDestructive()
+							.onClick(async () => {
+								// A push in flight writes the state back when it ends (spec §4.1: it holds the run lock).
+								if (this.plugin.isSyncing()) {
+									new Notice("Wait for the sync to finish, then start over.");
+									return;
+								}
+								startOverReadwise(this.plugin.data);
+								await this.plugin.saveData(this.plugin.data);
+								this.update();
+							}),
+					);
+				}),
+			});
+		}
+		return {
+			type: "page",
+			name: "Readwise",
+			displayValue: this.guardedValue("Readwise", "", () => entry().value),
+			status: this.guardedValue<"warning" | null>("Readwise", null, () => entry().status),
+			items: [{ type: "group", cls: "tagged-sync-group-readwise", items }],
+		};
+	}
 
+	/**
+	 * The line of Readwise spec §2.1, asked again when the switch changes. Numbered like Zotero's probe,
+	 * so a slow answer never lands on top of a newer one; an answer that lands is also what the page's
+	 * entry on the root reads (settings-redesign spec §5).
+	 */
+	private renderReadwiseLine(setting: Setting): () => void {
+		const line = setting.descEl.createDiv({ cls: "tagged-sync-verdict" });
+		const paint = (connection: ReadwiseConnection) => {
+			const { text, tone } = readwiseConnectionLine(connection, this.plugin.data.readwiseBooks);
+			line.setText(text);
+			line.style.color = tone === null ? "" : `var(--text-${tone})`;
+		};
+		let probe = 0;
+		const refresh = () => {
+			const mine = ++probe;
+			const pro = readwiseProAllowed(this.plugin.entitlement());
+			// The Keychain is read only when the line will ask readwise.io (ticket 20 item 2).
+			const token = pro && this.plugin.data.readwise.push ? this.plugin.readwiseToken() : null;
+			paint(!pro ? "free" : !this.plugin.data.readwise.push ? "off" : token === null ? "no-token" : "checking");
+			if (token === null) return;
+			void (async () => {
+				// A clash is the state's to say, so readwise.io is not asked (spec §11 P4).
+				const answer = readwiseClashed(this.plugin.data, await tokenFingerprint(token)) ? "clash" : await createReadwiseClient(token).check();
+				// Kept for the root's entry while it is about the token in the Keychain, the page left or not;
+				// another token redrew the page, so this line is gone too.
+				if (this.plugin.readwiseToken() !== token) return;
+				this.plugin.readwiseLastCheck = answer;
+				if (mine === probe) paint(answer);
+			})();
+		};
+		refresh();
+		this.refreshReadwiseLine = refresh;
+		return () => {
+			probe++;
+			this.refreshReadwiseLine = null;
+		};
+	}
+
+	/**
+	 * Help, last, because those links are read when something has gone wrong (spec §3.8). A fragment
+	 * description is built on every read: a fragment is used up by the first render (spec §2.6).
+	 */
+	private helpGroup(): SettingDefinitionGroup {
+		return {
+			type: "group",
+			heading: "Help",
+			cls: "tagged-sync-group-help",
+			items: [
+				{
+					name: "Report a problem",
+					get desc() {
+						return createFragment((desc: DocumentFragment) => {
+							desc.appendText("Copy your setup details, then open an issue at ");
+							desc.createEl("a", { text: "GitHub", href: ISSUES_URL });
+							desc.appendText(" and paste them in. Nothing is sent from here.");
+						});
+					},
+					render: this.guarded("Report a problem", (setting) => {
+						setting.addButton((button) => button.setButtonText("Copy diagnostics").onClick(() => this.copyDiagnostics()));
+					}),
+				},
+				{
+					name: "Request a feature",
+					get desc() {
+						return createFragment((desc: DocumentFragment) => {
+							desc.appendText("Suggest a feature on ");
+							desc.createEl("a", { text: "GitHub", href: FEATURE_REQUEST_URL });
+							desc.appendText(" or vote on ");
+							desc.createEl("a", { text: "existing requests", href: FEATURE_VOTING_URL });
+							desc.appendText(" with a 👍 reaction.");
+						});
+					},
+				},
+			],
+		};
+	}
+
+	/** *Copy diagnostics*: the setup details on the clipboard, for an issue the user opens themselves. */
+	private async copyDiagnostics(): Promise<void> {
+		await navigator.clipboard.writeText(
+			buildDiagnostics({
+				pluginVersion: this.plugin.manifest.version,
+				obsidianVersion: apiVersion,
+				platform: Platform.isMacOS ? "macOS" : Platform.isWin ? "Windows" : Platform.isLinux ? "Linux" : "other",
+				visionAvailability: visionUnavailableReason() ?? "available",
+				backend: this.plugin.data.ocrBackend,
+				visionRevision: visionRunStats.revision,
+				unreadableInkRegions: visionRunStats.unreadableInkRegions,
+				reusedPageTranscriptions: this.plugin.lastPageTranscriptions,
+				textLayer: this.plugin.lastTextLayer,
+				ocrTally: this.plugin.lastOcrTally,
+				pendingOcrRetries: pendingOcrRetries(this.plugin.data.syncIndex),
+				mappedTagCount: Object.keys(this.plugin.data.tagFolderMap).length,
+				zotero: zoteroDiagnosticsLine(this.plugin.data.zotero, this.plugin.entitlement(), linkedDocumentIds(this.plugin.data.zoteroLinks).length),
+				readwise: readwiseDiagnosticsLine(this.plugin.data, this.plugin.entitlement(), this.plugin.readwiseLastCheck, () => this.plugin.readwiseToken()),
+				lastSyncAt: this.plugin.data.lastSyncAt,
+				lastSyncError: this.plugin.lastSyncError,
+			}),
+		);
+		new Notice("Diagnostics copied to the clipboard.");
+	}
+
+	/**
+	 * The backend dropdown, and under it the selected backend's own rows in one host row (spec §3.4,
+	 * P3): the registry contract and the backends' code stay, and the host is left out of settings
+	 * search, as those rows always were.
+	 */
+	private transcriptionGroup(): SettingDefinitionGroup {
 		// Null only for a stored id no build registers -- a downgrade, or a hand-edited `data.json`.
 		// The row then says nothing rather than guessing which promise an unknown backend makes.
 		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
@@ -933,106 +1261,111 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						.join(" ")
 				: "");
 
-		new Setting(containerEl)
-			.setName("Backend")
-			// The promise of the backend that is *selected*. The three cases are three different
-			// promises (free-localhost-ocr spec §4.1) and this row used to make all of them at once,
-			// which left a reader on LM Studio reading about Apple Vision and about cloud providers.
-			// Where Vision cannot run, the dropdown option itself carries the macOS floor, so that is
-			// not repeated here either.
-			.setDesc(selected ? [backendPromise(selected), contract].filter(Boolean).join(" ") : "")
-			.addDropdown((dropdown) => {
-				for (const entry of ocrBackendEntries()) {
-					dropdown.addOption(entry.id, entry.label);
-					// Show every backend; disable one that can't run here, so the gap explains itself in place (spec §4.2).
-					const unavailable = entry.unavailableLabel?.();
-					if (!unavailable) continue;
-					// addOption() appends, so the entry just added is the last option.
-					const option = dropdown.selectEl.options[dropdown.selectEl.options.length - 1];
-					option.disabled = true;
-					option.text = unavailable;
-				}
-				dropdown.setValue(this.plugin.data.ocrBackend);
-				dropdown.onChange(async (value) => {
-					this.plugin.data.ocrBackend = value;
-					await this.plugin.saveData(this.plugin.data);
-					this.redraw();
-				});
-			});
-
-		const contextFor = (backendId: string) => ({
-			settings: (this.plugin.data.llmProviders[backendId] ??= {}),
-			save: () => this.plugin.saveData(this.plugin.data),
-			selectDefaultBackend: async () => {
-				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
-				await this.plugin.saveData(this.plugin.data);
-				this.redraw();
+		const items: SettingDefinition[] = [
+			{
+				name: "Backend",
+				// The promise of the backend that is *selected*. The three cases are three different
+				// promises (free-localhost-ocr spec §4.1) and this row used to make all of them at once,
+				// which left a reader on LM Studio reading about Apple Vision and about cloud providers.
+				// Where Vision cannot run, the dropdown option itself carries the macOS floor, so that is
+				// not repeated here either.
+				desc: selected ? [backendPromise(selected), contract].filter(Boolean).join(" ") : "",
+				aliases: ["OCR", "handwriting", "transcription model"],
+				render: this.guarded("Backend", (setting) => {
+					setting.addDropdown((dropdown) => {
+						for (const entry of ocrBackendEntries()) {
+							dropdown.addOption(entry.id, entry.label);
+							// Show every backend; disable one that can't run here, so the gap explains itself in place (spec §4.2).
+							const unavailable = entry.unavailableLabel?.();
+							if (!unavailable) continue;
+							// addOption() appends, so the entry just added is the last option.
+							const option = dropdown.selectEl.options[dropdown.selectEl.options.length - 1];
+							option.disabled = true;
+							option.text = unavailable;
+						}
+						dropdown.setValue(this.plugin.data.ocrBackend);
+						dropdown.onChange(async (value) => {
+							this.plugin.data.ocrBackend = value;
+							await this.plugin.saveData(this.plugin.data);
+							this.update();
+						});
+					});
+				}),
 			},
-		});
+		];
 
-		const id = this.plugin.data.ocrBackend;
-		ocrBackendEntry(id)?.renderSettings?.(containerEl, contextFor(id));
+		if (selected?.renderSettings) {
+			items.push({
+				// Never shown: the row is emptied, and the backend draws its own rows into it.
+				name: "Backend settings",
+				searchable: false,
+				render: this.guarded("Backend settings", (setting) => {
+					// Emptied, not just stripped of its name and controls: Obsidian keeps this row across a
+					// redraw and draws into it again, and the last backend's rows would stay above the new ones.
+					setting.settingEl.empty();
+					setting.settingEl.addClass("tagged-sync-backend-row");
+					const host = setting.settingEl.createDiv({ cls: "tagged-sync-backend-host" });
+					return selected.renderSettings?.(host, {
+						settings: (this.plugin.data.llmProviders[selected.id] ??= {}),
+						save: () => this.plugin.saveData(this.plugin.data),
+						selectDefaultBackend: async () => {
+							this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
+							await this.plugin.saveData(this.plugin.data);
+							this.update();
+						},
+					});
+				}),
+			});
+		}
+		return { type: "group", heading: "Transcription", cls: "tagged-sync-group-transcription", items };
 	}
 
 	/**
-	 * Opt-in background sync (auto-sync spec §"Settings & data model"), placed after OCR because the
-	 * metered-consent toggle references the chosen backend. Conditional rows (interval, metered
-	 * consent) appear only when relevant; every change persists, re-arms the interval timer, and
-	 * re-renders so the conditional rows update.
+	 * Opt-in background sync (auto-sync spec §"Settings & data model", settings-redesign spec §3.5),
+	 * placed after Transcription because the consent rows depend on the chosen backend. The rows after
+	 * the switch are in the page all along and shown while it is on, so switching it moves nothing;
+	 * every change re-arms the interval timer ({@link setControlValue}).
 	 */
-	private renderAutoSyncSettings(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Automatic sync").setHeading();
-
-		const auto = this.plugin.data.autoSync;
-		const persist = async () => {
-			await this.plugin.saveData(this.plugin.data);
-			this.plugin.rearmAutoSyncInterval();
-			this.redraw();
-		};
-
-		new Setting(containerEl)
-			.setName("Enable automatic sync")
-			.setDesc("Sync on launch and periodically while Obsidian is open.")
-			.addToggle((toggle) =>
-				toggle.setValue(auto.enabled).onChange(async (value) => {
-					auto.enabled = value;
-					await persist();
-				}),
-			);
-
-		if (!auto.enabled) return;
-
-		new Setting(containerEl)
-			.setName("Sync interval")
-			.setDesc("How often to re-sync during a long session. On-launch sync always runs.")
-			.addDropdown((dropdown) => {
-				dropdown.addOption("launch", "Only on launch");
-				dropdown.addOption("2", "Every 2 hours");
-				dropdown.addOption("6", "Every 6 hours");
-				dropdown.addOption("12", "Every 12 hours");
-				dropdown.addOption("24", "Every 24 hours");
-				dropdown.setValue(auto.intervalHours === null ? "launch" : String(auto.intervalHours));
-				dropdown.onChange(async (value) => {
-					auto.intervalHours = value === "launch" ? null : Number(value);
-					await persist();
-				});
-			});
+	private autoSyncGroup(): SettingDefinitionGroup {
+		const enabled = this.guardedValue("Automatic sync", false, () => this.plugin.data.autoSync.enabled);
+		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
+		const items: SettingDefinition[] = [
+			{
+				name: "Enable automatic sync",
+				desc: "Sync on launch and periodically while Obsidian is open.",
+				control: { type: "toggle", key: "autoSync.enabled" },
+			},
+			{
+				name: "Sync interval",
+				desc: "How often to re-sync during a long session. On-launch sync always runs.",
+				visible: enabled,
+				control: {
+					type: "dropdown",
+					key: "autoSync.interval",
+					options: INTERVALS,
+				},
+			},
+		];
 
 		// The control for a backend whose background cost is not money but battery, heat and several
-		// GB of RAM.
-		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
-		if (selected?.needsBackgroundConsent && selected.backgroundConsent) {
-			const consent = selected.backgroundConsent;
-			const blob = (this.plugin.data.llmProviders[selected.id] ??= {});
-			new Setting(containerEl)
-				.setName(BACKGROUND_CONSENT_NAME)
-				.setDesc(consent.description(blob))
-				.addToggle((toggle) =>
-					toggle.setValue(consent.get(blob)).onChange(async (value) => {
-						consent.set(blob, value);
-						await persist();
-					}),
-				);
+		// GB of RAM. Drawn by our code: the answer lives in the backend's opaque blob, and its
+		// description reads the model directory from disk, which a definition must not.
+		const consent = selected?.needsBackgroundConsent ? selected.backgroundConsent : undefined;
+		if (selected && consent) {
+			items.push({
+				name: BACKGROUND_CONSENT_NAME,
+				visible: enabled,
+				render: this.guarded(BACKGROUND_CONSENT_NAME, (setting) => {
+					const blob = (this.plugin.data.llmProviders[selected.id] ??= {});
+					setting.setDesc(consent.description(blob)).addToggle((toggle) =>
+						toggle.setValue(consent.get(blob)).onChange(async (value) => {
+							consent.set(blob, value);
+							await this.plugin.saveData(this.plugin.data);
+							this.plugin.rearmAutoSyncInterval();
+						}),
+					);
+				}),
+			});
 		}
 
 		// Money-safety consent (spec §"Money-safety gate"): only meaningful for a metered cloud backend.
@@ -1042,109 +1375,275 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		// what happens.
 		if (isMeteredProvider(this.plugin.data.ocrBackend)) {
 			const provider = selected?.label ?? "your provider";
-			new Setting(containerEl)
-				.setName(BACKGROUND_CONSENT_NAME)
-				.setDesc(
+			items.push({
+				name: BACKGROUND_CONSENT_NAME,
+				desc:
 					`Each automatic sync sends your new pages to ${provider} and bills your API key. ` +
-						"Off, automatic sync does nothing while this backend is chosen. A sync you start yourself still runs.",
-				)
-				.addToggle((toggle) =>
-					toggle.setValue(auto.autoTranscribeMetered).onChange(async (value) => {
-						auto.autoTranscribeMetered = value;
-						await persist();
-					}),
-				);
+					"Off, automatic sync does nothing while this backend is chosen. A sync you start yourself still runs.",
+				visible: enabled,
+				control: { type: "toggle", key: "autoSync.autoTranscribeMetered" },
+			});
 		}
+		return {
+			type: "group",
+			heading: "Automatic sync",
+			cls: "tagged-sync-group-autosync",
+			items,
+		};
 	}
 
-	private renderTagRouting(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Tag routing").setHeading();
-
-		new Setting(containerEl)
-			.setName("Discover tags")
-			.setDesc("Scan your reMarkable notebooks and pages for tags.")
-			.addButton((button) =>
-				button.setButtonText("Scan").onClick(async () => {
-					button.setDisabled(true);
-					let session: TransportSession | null = null;
-					try {
-						// Through the same chain a sync uses, so a vault that configured a fallback gets one
-						// here too rather than only on the job this was written for.
-						session = (await this.plugin.openSource()).session;
-						const notebooks = await enumerateNotebookTags(session.api);
-						this.discoveredTags = collectTagNames(notebooks);
-						new Notice(`Found ${this.discoveredTags.length} tag(s).`);
-					} catch (error) {
-						new Notice(`Failed to discover tags: ${(error as Error).message}`);
-					} finally {
-						await session?.close();
-					}
-					this.redraw();
-				}),
-			);
-
-		const mapping = this.plugin.data.tagFolderMap;
+	/**
+	 * Tag routing (settings-redesign spec §4): the mapped tags as rows, then the found tags as pills to
+	 * click, in one group -- readable with 20–50 tags on the tablet and few mapped (06 #1). What the rows
+	 * show is `planTagRouting`'s to decide; this wires it.
+	 */
+	private tagGroup(): SettingDefinitionGroup {
+		const folders = this.folderPaths();
 		const view = planTagRouting({
-			mapping,
-			discoveredTags: this.discoveredTags,
-			// The root always exists, so even a brand-new empty vault has one valid target.
-			folderPaths: [
-				"/",
-				...this.app.vault
-					.getAllLoadedFiles()
-					.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
-					.map((folder) => folder.path)
-					.sort(),
-			],
+			mapping: this.plugin.data.tagFolderMap,
+			foundTags: this.foundTags,
+			folderPaths: folders,
 			entitlement: this.plugin.entitlement(),
 		});
-
-		const persist = async () => {
-			await this.plugin.saveData(this.plugin.data);
-			this.redraw();
-		};
-
-		for (const item of view.items) {
-			if (item.kind === "notice") {
-				containerEl.createDiv({ cls: "tagged-sync-note", text: item.text });
-				continue;
-			}
-			const row = new Setting(containerEl).setName(item.tag).setDesc(item.desc);
-			if (item.kind === "capped") continue;
-
-			// A mapped tag used to render read-only, so a wrong first choice could only be undone by
-			// editing data.json by hand. Harmless before the cap; a trap with it, since the one slot
-			// would be stuck.
-			row.addDropdown((dropdown) => {
-				for (const option of item.options) dropdown.addOption(option.value, option.label);
-				if (item.kind === "mapped") dropdown.setValue(item.folder);
-				dropdown.onChange(async (value) => {
-					if (!value) return;
-					// The one gated feature that exists today: a mapping past the free cap. This is the
-					// moment the licence is *used*, so it is the moment it is re-checked -- not on load,
-					// and never for a free user, who cannot reach this branch at all.
-					if (
-						item.kind === "mappable" &&
-						view.recheckLicenceBeforeAdd &&
-						(await this.plugin.refreshLicence()).tier === "free"
-					) {
-						this.redraw();
-						return;
-					}
-					mapping[item.tag] = value;
-					await persist();
-				});
+		// Read by `matchTag`, which Obsidian keeps from the group's first draw (see the return below).
+		this.mappedTags = view.mapped;
+		this.filterShown = view.filter;
+		// With the filter hidden there is nothing to clear a query, and the pills would stay filtered by it.
+		if (!view.filter) this.tagFilter = "";
+		/**
+		 * Every row of this group is a render row, so each draw can say on the group whether the filter box
+		 * shows (see the return); a group of text rows alone would leave the class as it last was.
+		 */
+		const tagRow = (name: string, render: (setting: Setting) => void | (() => void) = () => undefined): SettingDefinitionRender["render"] =>
+			this.guarded(name, (setting) => {
+				setting.settingEl.closest(".tagged-sync-group-tags")?.toggleClass("tagged-sync-filter-on", view.filter);
+				return render(setting);
 			});
-			if (item.kind !== "mapped") continue;
-			row.addButton((button) => {
-				button.setButtonText("Remove").onClick(async () => {
-					delete mapping[item.tag];
-					await persist();
-				});
-				// `setWarning()` is deprecated and `setDestructive()` needs 1.13, while the manifest
-				// floor is 1.5.7 -- the class both of them set predates both.
-				button.buttonEl.addClass("mod-warning");
+
+		/** Opens the folder picker for `tag`; choosing saves at once (06 #2). `adding` is a pill, not a mapped row. */
+		const pick = (tag: string, adding: boolean): void =>
+			new FolderPicker(this.app, tag, folders, async (path) => {
+				// The one gated feature here: a mapping past the free cap. This is the moment the licence is
+				// *used*, so it is the moment it is re-checked -- not on load, and never for a free user, who
+				// cannot reach this branch at all. Re-pointing a mapped tag adds nothing, so it never asks.
+				if (adding && view.recheckLicenceBeforeAdd && (await this.plugin.refreshLicence()).tier === "free") {
+					this.update();
+					return;
+				}
+				this.plugin.data.tagFolderMap[tag] = path;
+				await this.plugin.saveData(this.plugin.data);
+				this.update();
+			}).open();
+
+		const items: SettingDefinition[] = view.mapped.map((mapped) => ({
+			name: mapped.tag,
+			// The name the folder button shows, so "vault root" finds a tag mapped to "/".
+			aliases: [folderLabel(mapped.folder)],
+			render: tagRow(mapped.tag, (setting) => this.renderMappedTag(setting, mapped, () => pick(mapped.tag, false))),
+		}));
+		if (view.removalNote) {
+			items.push({
+				name: "Removing a tag",
+				desc: REMOVAL_MESSAGE,
+				searchable: false,
+				// A footer to the rows above it rather than a row of its own (06 #6): small, muted, no border.
+				render: tagRow("Removing a tag", (setting) => setting.settingEl.addClass("tagged-sync-row-note")),
 			});
 		}
+		for (const line of view.lines) {
+			if (line === "scan-first") {
+				items.push({
+					name: "Scan for tags",
+					desc: "Scan to see which tags your reMarkable uses.",
+					searchable: false,
+					render: tagRow("Scan for tags", (setting) => {
+						setting.addButton((button) =>
+							button
+								.setButtonText(this.scanning ? "Scanning…" : "Scan")
+								.setDisabled(this.scanning)
+								.onClick(() => this.scanTags()),
+						);
+					}),
+				});
+			} else if (line === "nothing-found") {
+				items.push({
+					name: "No tags found",
+					desc: "Tag a notebook or page on your reMarkable, then scan again.",
+					searchable: false,
+					render: tagRow("No tags found"),
+				});
+			} else {
+				items.push({ name: "One tag in the free version", desc: TAG_CAP_MESSAGE, searchable: false, render: tagRow("One tag in the free version") });
+			}
+		}
+		if (view.pills.length > 0) {
+			// Searchable, unlike the lines: settings search finds a tag the tablet carries, and the group's
+			// filter, which asks only searchable rows, reaches the pills through this row (06 #4, P9).
+			items.push({
+				name: "Found tags",
+				aliases: view.pills.map((found) => found.tag),
+				render: tagRow("Found tags", (setting) => this.renderPills(setting, view.pills, (tag) => pick(tag, true))),
+			});
+		}
+
+		// Obsidian builds a group's header once, when the group is first drawn -- before the first scan --
+		// and `update()` keeps it (read from 1.15.0's app.js, `rue`; seen on the device in ticket 12). So
+		// the search box is always declared and shown by the rows' class from twelve tags, its `match`
+		// reads the tab rather than this call, and the scan icon is disabled through a handle.
+		return {
+			type: "group",
+			heading: "Tag routing",
+			cls: "tagged-sync-group-tags",
+			extraButtons: [
+				(button) => {
+					this.scanIcon = button
+						.setIcon("refresh-cw")
+						.setTooltip("Scan for tags")
+						.setDisabled(this.scanning)
+						.onClick(() => void this.scanTags());
+				},
+			],
+			search: { placeholder: "Filter tags", match: (def, query) => this.matchTag(def, query) },
+			items,
+		};
+	}
+
+	/**
+	 * The filter (spec §4.3, P9), asked for each searchable row on every keystroke (ticket 17's F6): the
+	 * pills follow the query as a side effect, and a mapped row stays when its tag or folder holds it.
+	 */
+	private matchTag(def: SettingDefinition, query: string): boolean {
+		if (!this.filterShown) return true;
+		this.tagFilter = query;
+		this.pillRow?.filter(query);
+		const mapped = this.mappedTags.find((candidate) => candidate.tag === def.name);
+		const needle = query.toLowerCase();
+		return mapped === undefined || mapped.tag.toLowerCase().includes(needle) || mapped.label.toLowerCase().includes(needle);
+	}
+
+	/** `/` and every folder below it, sorted: the root always exists, so even a new vault has a target. */
+	private folderPaths(): string[] {
+		return [
+			"/",
+			...this.app.vault
+				.getAllLoadedFiles()
+				.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
+				.map((folder) => folder.path)
+				.sort(),
+		];
+	}
+
+	/** *pill → folder button, ×* (06 #3): the folder can be changed, and the mapping removed without a question. */
+	private renderMappedTag(setting: Setting, mapped: MappedTag, pick: () => void): void {
+		// The tag in Obsidian's tag look in place of its name. Emptied first: Obsidian keeps this row across
+		// a redraw and draws into it again.
+		setting.nameEl.empty();
+		setting.nameEl.createSpan({ cls: "tagged-sync-pill", text: mapped.tag });
+		setting
+			.addButton((button) => {
+				button.setButtonText(mapped.label).onClick(pick);
+				// The mapping keeps working; the colour says the folder it names is not there (P13).
+				if (mapped.missing) button.buttonEl.addClass("tagged-sync-folder-missing");
+			})
+			.addExtraButton((button) =>
+				button
+					.setIcon("x")
+					.setTooltip("Remove mapping")
+					.onClick(async () => {
+						delete this.plugin.data.tagFolderMap[mapped.tag];
+						await this.plugin.saveData(this.plugin.data);
+						this.update();
+					}),
+			);
+	}
+
+	/**
+	 * The found tags as pills, full width, the row's name and controls gone (spec §4.2 row 6). A capped
+	 * pill is shown faded and says why when clicked, under the pills, with the way to Pro (06 #7): a
+	 * refusal nobody explains reads as a bug. Returns the cleanup that drops the filter handle.
+	 */
+	private renderPills(setting: Setting, pills: readonly UnmappedTag[], pick: (tag: string) => void): () => void {
+		// Emptied, not just cleared of its name: Obsidian draws into the same row again on a redraw.
+		setting.settingEl.empty();
+		setting.settingEl.addClass("tagged-sync-pill-row");
+		const wrap = setting.settingEl.createDiv({ cls: "tagged-sync-pills" });
+		const capLine = setting.settingEl.createDiv({ cls: "tagged-sync-capped-line" });
+		const drawn = pills.map(({ tag, capped }) => {
+			// Without "#": a reMarkable tag may hold spaces, and "#Project X" reads as a broken Obsidian tag (06 #8).
+			const el = wrap.createEl("button", { cls: capped ? "tagged-sync-pill is-capped" : "tagged-sync-pill", text: tag });
+			el.addEventListener("click", () => (capped ? this.sayCapped(capLine, tag) : pick(tag)));
+			return { tag: tag.toLowerCase(), el };
+		});
+		const filter = (query: string): void => {
+			for (const { tag, el } of drawn) el.toggle(tag.includes(query.toLowerCase()));
+		};
+		filter(this.tagFilter);
+		this.pillRow = { filter };
+		// Run before the row is drawn again (it keeps its name), or after the redraw that left it out.
+		return () => {
+			this.pillRow = null;
+		};
+	}
+
+	/** Under the pills, until the next redraw: another capped pill replaces it, and nothing is saved. */
+	private sayCapped(line: HTMLElement, tag: string): void {
+		line.empty();
+		line.createSpan({ text: `Syncing ${tag} needs Tagged Sync Pro.` });
+		line.createEl("button", { text: "See Pro" }).addEventListener("click", () =>
+			this.containerEl.querySelector(".tagged-sync-group-pro")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+		);
+	}
+
+	/**
+	 * One scan, from the heading icon or the pre-scan row. Through the same chain a sync uses, so a
+	 * vault that configured a fallback gets one here too. A failed scan keeps what an earlier one found:
+	 * a tablet that did not answer has not lost its tags.
+	 */
+	private async scanTags(): Promise<void> {
+		if (this.scanning) return;
+		this.scanning = true;
+		this.scanIcon?.setDisabled(true);
+		this.update();
+		let session: TransportSession | null = null;
+		try {
+			session = (await this.plugin.openSource()).session;
+			this.foundTags = collectTagNames(await enumerateNotebookTags(session.api));
+			new Notice(`Found ${this.foundTags.length} tag(s).`);
+		} catch (error) {
+			new Notice(`Failed to discover tags: ${(error as Error).message}`);
+		} finally {
+			await session?.close();
+			this.scanning = false;
+			this.scanIcon?.setDisabled(false);
+		}
+		this.update();
+	}
+}
+
+/**
+ * The folder a tag syncs into (spec §4.4): existing folders only (06 #2), the root first and called
+ * by a name. Opens in the window the settings are in (ticket 17's F4).
+ */
+class FolderPicker extends FuzzySuggestModal<string> {
+	constructor(
+		app: App,
+		tag: string,
+		private readonly folders: string[],
+		private readonly chosen: (path: string) => Promise<void>,
+	) {
+		super(app);
+		this.setPlaceholder(`Choose a folder for ${tag}`);
+	}
+
+	getItems(): string[] {
+		return this.folders;
+	}
+
+	getItemText(path: string): string {
+		return folderLabel(path);
+	}
+
+	onChooseItem(path: string): void {
+		void this.chosen(path);
 	}
 }

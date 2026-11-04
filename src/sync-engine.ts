@@ -6,6 +6,8 @@ import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipe
 import { type DigestPage, digestId, NOT_TRANSCRIBED, renderDigest } from "./digest-builder";
 import type { AddedPagesScope } from "./zotero-notes";
 import type { ZoteroNoteParts, ZoteroPass } from "./zotero-sync";
+import type { ReadwiseRecorder, ReadwiseUnit } from "./readwise-push";
+import type { RecordScope } from "./readwise-state";
 import {
 	blockHashOf,
 	extractManagedBlock,
@@ -195,8 +197,8 @@ export interface SyncIndexRow {
 	 * note of a PDF that had none read (`DigestBuild.ocrRetryable`), `at` when the digest failed (ISO),
 	 * which a failure that repeats moves forward.
 	 *
-	 * Without it nothing ever did: the device is unchanged, so every gate skips the document, and
-	 * re-transcribe refuses a digest. Not retried unconditionally, because the failures that repeat
+	 * Without it nothing did on its own: the device is unchanged, so every gate skips the document. Not
+	 * retried unconditionally, because the failures that repeat
 	 * with the same model -- a truncation, a refusal -- would bill a metered backend for every note of
 	 * the PDF on every sync. Cleared by the next write that read everything; kept by one that read
 	 * nothing -- under Off, or a digest build that threw (`buildUnitDigest`).
@@ -359,6 +361,11 @@ export interface SyncDeps {
 	 * PDF-backed note, **after** that note is written, and nothing it answers can fail the sync.
 	 */
 	zotero?: ZoteroPass;
+	/**
+	 * The Readwise record (Readwise spec §4.1), or absent while recording is off -- no Pro, or the switch
+	 * off. Handed every written unit with a digest after the Zotero pass; it never touches the network.
+	 */
+	readwise?: ReadwiseRecorder;
 	/**
 	 * Polled at unit boundaries: `true` ends the run early, in a state the next sync resumes from.
 	 * Only ever read, never awaited -- nothing in this path can actually be aborted (the cloud API
@@ -1065,6 +1072,12 @@ interface UnitParams {
 		/** MD5 of the source PDF the tablet holds -- what §2.3 matches on. Read only when something asks. */
 		md5(): Promise<string | null>;
 	};
+	/**
+	 * What the Readwise record needs about this unit (Readwise spec §4.1). A unit without a digest -- a
+	 * handwritten notebook or page -- is recorded as having nothing, so the typed pages it no longer has
+	 * are cleaned up (§4.2). `epub` fetches the book's OPF, for a book only.
+	 */
+	readwise?: Pick<ReadwiseUnit, "pages" | "scope" | "pageOrder" | "marginNotes" | "category"> & { readonly epub?: () => Promise<EpubBook | null> };
 }
 
 /**
@@ -1305,9 +1318,27 @@ function layerTally(scenes: RmPage[], texts: { embedPage: number; text: string }
 	};
 }
 
+/** Hands a unit to the Readwise recorder, with what may name its book. */
+async function recordForReadwise(
+	recorder: ReadwiseRecorder,
+	{ epub, ...unit }: NonNullable<UnitParams["readwise"]>,
+	{ docId, embedPath, visibleName, paper }: { docId: string; embedPath: string; visibleName: string; paper?: ZoteroNoteParts["paper"] },
+): Promise<void> {
+	await recorder.record({
+		...unit,
+		docId,
+		embedPath,
+		sources: async () => {
+			// A book that cannot be fetched is still recorded, under the name the tablet gives it.
+			const book = await epub?.().catch(() => null);
+			return { ...(paper ? { zotero: paper } : {}), ...(book ? { epub: book } : {}), visibleName };
+		},
+	});
+}
+
 /** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
-	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
+	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero" | "readwise"> & { attachmentsFolder: string; newNoteId: () => string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<WriteUnitResult> {
@@ -1394,6 +1425,12 @@ async function writeUnit(
 			withZotero = { ...fields, zoteroLine: zotero.line, digest: renderDigest(embedPath, [...params.zotero.pages], zotero.links) };
 			await writeNote(deps.noteStore, "", withZotero, notePath);
 		}
+	}
+
+	// After the Zotero pass, which is what names the paper the book may be named after (spec §11 P21).
+	// Nothing here can fail the write: the recorder is pure, and the book's fetch is caught below.
+	if (params.readwise !== undefined && deps.readwise !== undefined) {
+		await recordForReadwise(deps.readwise, params.readwise, { docId: params.docId, embedPath, visibleName: params.source, paper: zotero?.paper });
 	}
 
 	// Carried from the row this write replaces -- which is the rename's source row when a mapped tag
@@ -1627,6 +1664,53 @@ export function invalidateRenders(index: SyncIndex, docIds?: readonly string[]):
 }
 
 /**
+ * Makes exactly these notes due, by their sync key. For a command that asked about one note: its whole
+ * document would take a hand-edited sibling with it, and a sync skips that row without restoring its
+ * version, so the document would reopen, and its other notes be read again, on every sync.
+ */
+export function invalidateRows(index: SyncIndex, keys: readonly string[]): SyncIndex {
+	const rows = { ...index.rows };
+	for (const key of keys) {
+		if (rows[key] === undefined) continue;
+		const { renderVersion: _dropped, ...withoutVersion } = rows[key];
+		rows[key] = withoutVersion;
+	}
+	return { ...index, rows };
+}
+
+/**
+ * The start of every sync: makes every note due when *Your notes on PDFs* differs from what the last
+ * sync ran with, and only then. Moved here from the switch itself, which invalidated on every change:
+ * knocked off and straight back on, it read every margin note in the vault again -- on a paid backend,
+ * a bill for a slip of the finger. Absent means a vault from before this was recorded, whose notes
+ * match the switch as far as anyone knows. True when `data` changed and must be saved now, for the
+ * reason `startReadwiseRecording` gives.
+ */
+export function settleMarginNotesChoice(data: { syncIndex: SyncIndex; marginNotes: boolean; marginNotesSynced?: boolean }): boolean {
+	if (data.marginNotesSynced === data.marginNotes) return false;
+	if (data.marginNotesSynced !== undefined) data.syncIndex = invalidateRenders(data.syncIndex);
+	data.marginNotesSynced = data.marginNotes;
+	return true;
+}
+
+/**
+ * The same for the two *Into Zotero* switches: nothing changed on the tablet, so without this a switch
+ * would wait for a change before anything reached Zotero (Zotero spec §10 P7). Only a switch that went
+ * on makes the linked documents due; off stops new writes and leaves every document as it is.
+ */
+export function settleZoteroSwitches(
+	data: { syncIndex: SyncIndex; zotero: { writeText: boolean; addRender: boolean }; zoteroSwitchesSynced?: { writeText: boolean; addRender: boolean } },
+	linkedDocIds: readonly string[],
+): boolean {
+	const { writeText, addRender } = data.zotero;
+	const last = data.zoteroSwitchesSynced;
+	if (last?.writeText === writeText && last.addRender === addRender) return false;
+	if (last && ((writeText && !last.writeText) || (addRender && !last.addRender))) data.syncIndex = invalidateRenders(data.syncIndex, linkedDocIds);
+	data.zoteroSwitchesSynced = { writeText, addRender };
+	return true;
+}
+
+/**
  * The `ocrRetry.with` of a row marked by `markLegacyOcrLosses`. No backend's fingerprint is ever this,
  * so the first sync under a backend that reads anything finds the retry due at once (`ocrRetryDue`).
  */
@@ -1634,8 +1718,8 @@ export const LEGACY_OCR_RETRY = "legacy";
 
 /**
  * Marks for one retry every note that a version before `ocrRetry` existed wrote with handwriting it
- * could not read. Such a row carries no `ocrRetry`, so nothing ever read its PDF again: the device is
- * unchanged, and re-transcribe refuses a digest. A user on 1.8.3 still saw the notes 1.8.2 had lost,
+ * could not read. Such a row carries no `ocrRetry`, so no sync read its PDF again: the device is
+ * unchanged. A user on 1.8.3 still saw the notes 1.8.2 had lost,
  * and only switching "Handwritten notes" off and on read them -- a step nobody finds on their own.
  *
  * Run once per vault (`TaggedSyncData.legacyOcrLossesMarked`), not on every sync: a note can keep the
@@ -1859,12 +1943,24 @@ async function planUnits(
 	const notebookDiff = diffUnitTags(previousNotebookRows, mapped.notebook);
 	plan.orphan.push(...notebookDiff.orphan);
 
-	// Notebook-tag notes always reassemble every live page once the notebook is opened: rows for
-	// these carry no per-page hash (spec §7's row schema), so there's no cheaper way to know which
-	// of a reopened notebook's pages are safe to skip -- only page-tag rows track that.
+	// Notebook-tag notes reassemble every live page once the notebook has changed: rows for these
+	// carry no per-page hash (spec §7's row schema), so there's no cheaper way to know which of its
+	// pages are safe to skip -- only page-tag rows track that. A note that is current is left alone,
+	// though: a document also opens for another note's sake, and one edited by hand keeps it open on
+	// every sync, which re-read this note's margin notes each time.
 	for (const tag of mapped.notebook) {
 		const rename = notebookDiff.rename?.newTag === tag ? notebookDiff.rename : null;
 		const existingRow = rows[notebookSyncKey(entry.id, tag)];
+		if (
+			!rename &&
+			existingRow?.status === "active" &&
+			existingRow.entryHash === entry.hash &&
+			!isRetargeted(existingRow, tagRouter) &&
+			!rerenderDue(existingRow) &&
+			(await noteStore.read(existingRow.notePath)) !== null
+		) {
+			continue;
+		}
 		// Checked before rendering and before OCR: a note we will not write must not cost a download,
 		// a render, or -- on a metered backend -- money. On a rename the note about to be rewritten is
 		// the *old* row's, which has no row at this tag's key yet.
@@ -2097,7 +2193,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const { api, tagRouter, now, ocrBackend } = deps;
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
 	const newNoteId = deps.newNoteId ?? (() => crypto.randomUUID());
-	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, layerReader: deps.layerReader, newNoteId, zotero: deps.zotero };
+	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, layerReader: deps.layerReader, newNoteId, zotero: deps.zotero, readwise: deps.readwise };
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 
@@ -2411,10 +2507,53 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			return pageRefById.get(pageId)?.appended ? { blockId: digestId("nt", pageId, "page") } : "none";
 		};
 
+		// The Readwise record of a unit, with or without a digest (Readwise spec §4.2): a whole-document unit speaks for
+		// every record of the book, a page tag for its one page, a failed build for none. Pages are
+		// numbered from the document, never from the unit (§11 P8), so a typed page by its page order.
+		const readwiseUnit = (pageId: string | null, digest: { pages: DigestPage[]; failed?: true }): UnitParams["readwise"] => {
+			const scope: RecordScope = digest.failed ? "none" : pageId === null ? "document" : { pageId };
+			// An EPUB is a book; a PDF, a typed document or a notebook's typed pages an article (user, 2026-11-02).
+			const category = content.fileType === "epub" ? "books" : "articles";
+			return { pages: digest.pages, scope, pageOrder: pdfBacked ? null : pageOrder, marginNotes: deps.marginNotes ?? false, category, epub: getBook };
+		};
+
 		// A tagged page's change-detection hash: its own `.rm` hash for handwritten pages, else the
 		// whole-doc hash -- for a PDF page (no `.rm`) or a blank page (never drawn), the page changes
 		// exactly when the document does.
 		const pageContentHash = (pageId: string): string => (pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash));
+
+		/**
+		 * Whether writing this digest would trade readings the note has for "could not be transcribed",
+		 * with nothing changed on the tablet: a server that is off, or a refusal. A re-read is asked to
+		 * make a note better, as `reTranscribeRow` is, so the note stays. Only for a failure: under Off a
+		 * note is meant to say what it says, and a changed tablet leaves the old note describing a page
+		 * that is gone.
+		 */
+		type UnitDigest = Awaited<ReturnType<typeof buildUnitDigest>>;
+		const digestWouldLose = async (row: SyncIndexRow, rename: TagRename | null, digest: UnitDigest): Promise<boolean> => {
+			if (rename !== null || row.entryHash !== entry.hash || isRetargeted(row, tagRouter)) return false;
+			if (digest.failed !== true && digest.ocr !== "failed" && digest.ocr !== "unavailable") return false;
+			const block = extractManagedBlock((await deps.noteStore.read(row.notePath)) ?? "");
+			if (block?.includes("\n## Digest\n") !== true) return false;
+			return digest.failed === true || digest.markdown.split(NOT_TRANSCRIBED).length > block.split(NOT_TRANSCRIBED).length;
+		};
+		/**
+		 * A note kept that way. A build that threw said nothing, so the row stays as it is, and due. A failed
+		 * reading makes it current, so a refusal is not billed again until its retry says so; what the
+		 * digest did read still goes to Readwise, or a document that is due for its first record would stay
+		 * out of it. Its book is named without the Zotero pass, which only runs for a note that is written.
+		 */
+		const keepNote = async (row: SyncIndexRow, digest: UnitDigest, pageId: string | null): Promise<void> => {
+			untouchedKeys.add(row.syncKey);
+			bar.finish();
+			if (digest.failed) return;
+			rows[row.syncKey] = withOcrRetry({ ...row, renderVersion: RENDER_VERSION }, digest.ocrRetry);
+			if (digest.ocr === "unavailable") unavailableOcrUnits++;
+			else failedOcrUnits++;
+			if (deps.readwise !== undefined) {
+				await recordForReadwise(deps.readwise, readwiseUnit(pageId, digest)!, { docId: entry.id, embedPath: attachmentPath(attachmentsFolder, entry.id, pageId), visibleName: entry.visibleName });
+			}
+		};
 
 		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash, rerenderDue);
 		for (const row of plan.orphan) orphanRow(rows, row);
@@ -2471,6 +2610,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
 				skipErrors.push(`failed to render "${entry.visibleName}" for tag "${tag}": ${errorText(error)}`);
+				// Keeps its old entry hash, which is what reopens the document on the next run.
+				untouchedKeys.add(notebookSyncKey(entry.id, tag));
 				skippedDocIds.add(entry.id);
 				// The bar counted these pages before anything went wrong, and the failure is already in
 				// the run's own report -- so they count as done rather than stranding the bar short.
@@ -2480,7 +2621,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `"${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			const digest: UnitDigest = digestPages ? await buildUnitDigest(null, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			if (unit.writtenRow && (await digestWouldLose(unit.writtenRow, rename, digest))) {
+				await keepNote(unit.writtenRow, digest, null);
+				continue;
+			}
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 			// Only for a notebook: a PDF-backed unit's pages carry no id, and its transcript is the
 			// digest's business (issue #117 is scoped to the notebook transcription path). `considered`
@@ -2528,6 +2673,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 						zoteroMd5 === undefined
 							? undefined
 							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(null, digest), md5: zoteroMd5 },
+					readwise: readwiseUnit(null, digest),
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2621,6 +2767,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${tag}", skipping`, error);
 				skipErrors.push(`failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${tag}": ${errorText(error)}`);
+				untouchedKeys.add(pageSyncKey(entry.id, unit.pageId, tag)); // see the notebook-tag branch
 				skippedDocIds.add(entry.id);
 				bar.finish(); // see the notebook-tag branch
 				continue;
@@ -2628,7 +2775,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			const digest: UnitDigest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			if (unit.writtenRow && (await digestWouldLose(unit.writtenRow, rename, digest))) {
+				await keepNote(unit.writtenRow, digest, unit.pageId);
+				continue;
+			}
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
 			const { written, emptyBlock, textLayer: unitLayerTally } = await writeUnit(
@@ -2660,6 +2811,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 						zoteroMd5 === undefined
 							? undefined
 							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(unit.pageId, digest), md5: zoteroMd5 },
+					readwise: readwiseUnit(unit.pageId, digest),
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2827,8 +2979,14 @@ async function scanReTranscribe(
 				return 0;
 			}
 			const { pages: pageHashes } = await getDocumentFiles(deps.api, entry.id, entry.hash);
-			const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdfBacked(content));
-			return (rowsByDoc.get(docId) ?? []).reduce((sum, row) => sum + reTranscribeSteps(row, docPages), 0);
+			const pdfBacked = isPdfBacked(content);
+			const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
+			let steps = 0;
+			for (const row of rowsByDoc.get(docId)!) {
+				// The run skips these, so the bar must not count them.
+				if (!keepsDigest(pdfBacked, (await deps.noteStore.read(row.notePath)) ?? "")) steps += reTranscribeSteps(row, docPages);
+			}
+			return steps;
 		} catch (error) {
 			// See `scanWorkload`: measuring must never be the thing that breaks a run.
 			console.warn(`Tagged Sync: could not measure "${entry.visibleName}" up front`, error);
@@ -3019,12 +3177,22 @@ function keepEarlierText(pages: TranscriptPage[], noteContent: string, folded: H
 	});
 }
 
-/** `unreadPages`: pages that failed and kept what their note had for them (see `reTranscribeRow`). */
+/**
+ * `unreadPages`: pages that failed and kept what their note had for them (see `reTranscribeRow`).
+ * `digestRowKeys`: PDF notes whose margin notes only a sync can read again, because only a sync writes
+ * a digest. Left out: a note edited by hand, which a sync would not write.
+ */
 export interface ReTranscribeAllResult {
 	updated: number;
 	unreadPages: number;
 	index: SyncIndex;
 	stopped: boolean;
+	digestRowKeys: string[];
+}
+
+/** A PDF note carrying a digest, whose transcript region refuses to grow (see `updateTranscript`). */
+function keepsDigest(pdfBacked: boolean, noteContent: string): boolean {
+	return pdfBacked && extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
 }
 
 /**
@@ -3051,11 +3219,12 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 	let updated = 0;
 	let unreadPages = 0;
+	const digestRowKeys: string[] = [];
 	const docIds = [...rowsByDoc.keys()];
 	const checkpoint = deps.saveIndex ? () => deps.saveIndex!({ ...index, rows: { ...rows } }) : async () => {};
 	// A stopped run still hands back every `blockHash` it refreshed: those notes were rewritten, and a
 	// caller that drops them would leave the next sync reading the plugin's own work as a hand edit.
-	const stopHere = (): ReTranscribeAllResult => ({ updated, unreadPages, index: { ...index, rows }, stopped: true });
+	const stopHere = (): ReTranscribeAllResult => ({ updated, unreadPages, index: { ...index, rows }, stopped: true, digestRowKeys });
 
 	const workload = await scanReTranscribe(deps, rowsByDoc, entryById, report, shouldStop);
 	if (workload.stopped) return stopHere();
@@ -3085,6 +3254,11 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			// whether a transcript may grow beside a digest, and which quotes have to be written back
 			// with it -- both needed before the transcript is built, not after (ticket 06).
 			const noteContent = (await noteStore.read(row.notePath)) ?? "";
+			// Before any page is sent: `updateTranscript` refuses this pair, so sending them paid for a no.
+			if (keepsDigest(pdfBacked, noteContent)) {
+				if (!blockEditedIn(noteContent, row)) digestRowKeys.push(row.syncKey);
+				continue;
+			}
 			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes, images }, noteContent, bar);
 			if (outcome.kind === "written" || outcome.kind === "unread") unreadPages += outcome.unreadPages;
 			if (outcome.kind !== "written") continue;
@@ -3095,7 +3269,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			await checkpoint();
 		}
 	}
-	return { updated, unreadPages, index: { ...index, rows }, stopped: false };
+	return { updated, unreadPages, index: { ...index, rows }, stopped: false, digestRowKeys };
 }
 
 /**
@@ -3110,8 +3284,10 @@ export type ReTranscribeNoteOutcome =
 	| "emptied"
 	/** The document is not in the account's listing any more, or the tagged page is gone from it. */
 	| "not-on-device"
-	/** A PDF-backed note carrying a digest -- refused before a single page was rendered. */
+	/** A PDF-backed note carrying a digest, which only a sync writes -- the caller starts one. No page was rendered. */
 	| "pdf-digest"
+	/** The same, edited by hand: a sync leaves it alone, so nothing can read its margin notes again. */
+	| "pdf-digest-edited"
 	/** The note has no transcript region and no fence to grow one in. */
 	| "no-transcript-section"
 	/** Every page failed, so the note was left exactly as it was. */
@@ -3175,10 +3351,10 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	// the note already carries decides whether a transcript may grow beside a digest at all.
 	const noteContent = (await noteStore.read(row.notePath)) ?? "";
 
-	// The free bail (spec §5.4). `updateTranscript` refuses this pair anyway, but only after every
-	// page has been rendered and sent -- so on a metered backend the user would pay for a guaranteed
-	// no. Both facts are already known here, so the refusal is moved in front of the money.
-	if (pdfBacked && extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true) return unchanged("pdf-digest");
+	// The free bail (spec §5.4). `updateTranscript` refuses this pair, but only after every page has
+	// been rendered and sent -- so on a metered backend the user would pay for a guaranteed no. Both
+	// facts are already known here, so the caller hears before the money: only a sync can write a digest.
+	if (keepsDigest(pdfBacked, noteContent)) return unchanged(blockEditedIn(noteContent, row) ? "pdf-digest-edited" : "pdf-digest");
 
 	// The pages this run will actually send, which is both what the bar counts and what the dialog
 	// quotes -- one number, so the warning cannot promise a different cost than the run has.

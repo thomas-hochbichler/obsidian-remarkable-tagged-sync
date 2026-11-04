@@ -294,7 +294,7 @@ export function asConnectionError(error: Error, credentials: SshCredentials): Er
 	const text = `${error.name}: ${error.message}`;
 	// `etimedout` is its own case and not covered by `timeout`: node spells the code `ETIMEDOUT`, with
 	// no `u` where the word has one. It is what a tablet that is simply off answers a connection with.
-	if (/timed out|timeout|etimedout|ehostunreach|enetunreach|econnrefused|econnreset|enotfound|network/i.test(text)) {
+	if (/timed out|timeout|etimedout|ehostunreach|ehostdown|enetunreach|enetdown|econnrefused|econnreset|enotfound|network/i.test(text)) {
 		return new DeviceUnreachableError(credentials.host, error);
 	}
 	return error;

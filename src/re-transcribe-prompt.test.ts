@@ -160,7 +160,7 @@ describe("reTranscribeNoteConfirmation", () => {
 });
 
 describe("reTranscribeNoteNotice", () => {
-	const outcomes: ReTranscribeNoteOutcome[] = ["written", "emptied", "not-on-device", "pdf-digest", "no-transcript-section", "stopped", "unread"];
+	const outcomes: ReTranscribeNoteOutcome[] = ["written", "emptied", "not-on-device", "pdf-digest-edited", "no-transcript-section", "stopped", "unread"];
 
 	it("gives every outcome that says anything its own sentence", () => {
 		// Seven outcomes, seven distinct sentences. Two outcomes sharing one would tell a user whose PDF
@@ -176,6 +176,11 @@ describe("reTranscribeNoteNotice", () => {
 
 	it("says nothing back to a user who has just said no", () => {
 		expect(reTranscribeNoteNotice("cancelled", "Meeting 12.3")).toBeNull();
+	});
+
+	// Not an ending: the sync it starts reports what it did.
+	it("says nothing for a digest about to be read again", () => {
+		expect(reTranscribeNoteNotice("pdf-digest", "Meeting 12.3")).toBeNull();
 	});
 
 	it("counts the pages that kept what they had before in the grammar of the count", () => {

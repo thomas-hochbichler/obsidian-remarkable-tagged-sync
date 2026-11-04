@@ -12,6 +12,7 @@
 export {
 	apiVersion,
 	debounce,
+	FuzzySuggestModal,
 	MarkdownRenderChild,
 	MarkdownView,
 	Modal,
@@ -24,6 +25,7 @@ export {
 	ProgressBarComponent,
 	requestUrl,
 	Scope,
+	SecretComponent,
 	Setting,
 	setIcon,
 	setTooltip,

@@ -19,6 +19,13 @@
       file: tests/stubs/fake-obsidian.test.ts
       test: "the plugin's module graph > loads against this fake, which is the whole reason the fake exists"
 
+    - id: T1.2
+      scenario: A file in src/ starts importing a value from obsidian the surface does not export yet, as main.ts did with requireApiVersion
+      expect: This test names it. tsc cannot -- it checks the import against the real obsidian.d.ts -- so before this the first sign was "is not a function" in whichever test reached the line
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the plugin's module graph > exports every value a non-test file imports from obsidian"
+
 - feature: T2
   name: normalizePath decides what counts as the same path
   code: tests/stubs/fake-obsidian.ts
@@ -327,6 +334,129 @@
       layer: unit
       file: tests/stubs/fake-obsidian.test.ts
       test: "the settings controls the plugin reaches past > hides an element the plugin toggles off, and shows it again"
+
+    - id: T10.4
+      scenario: A row holding a switch and a field is disabled, then enabled
+      expect: The row and each of its components follow, as 1.15.0's app.js Setting.setDisabled does -- which is how a control row's disabled reaches its switch
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the settings controls the plugin reaches past > disables a row's components with the row, and opens them again"
+
+- feature: T20
+  name: The declarative settings tab, drawn from its definitions
+  code: tests/stubs/fake-obsidian.ts
+  scenarios:
+    - id: T20.1
+      scenario: A tab answers a group with a heading and a row, and a page, and is opened on its root and then on the page
+      expect: The root reads heading, row, page entry in that order; the page reads its own rows only
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws a group's heading, then its rows, and a page as one entry on the root"
+
+    - id: T20.15
+      scenario: A page declares displayValue and status as functions, and the root is drawn twice with the state changed between
+      expect: The entry carries a DisplayValueComponent with the value and status asked for on each draw (obsidian.d.ts 1.13.1; ticket 17's F7)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > shows a page entry's value and status, asked again on every draw"
+
+    - id: T20.2
+      scenario: A render row returns a cleanup; the tab is redrawn, closed, and asked to update while closed
+      expect: The cleanup runs once per teardown, as obsidian.d.ts says, and a closed tab draws nothing
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > runs a render row's cleanup before every redraw and when the tab closes"
+
+    - id: T20.3
+      scenario: A definition carries a field the fake has not modelled yet (a group's visible)
+      expect: Drawing it throws and names the field, instead of drawing a group the user would never see
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > refuses a definition field it does not model, rather than drawing it as understood"
+
+    - id: T20.4
+      scenario: A definition is a list, which the fake does not model
+      expect: Drawing it throws and says so, rather than drawing the list as plain rows
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > refuses a list, which it does not model either"
+
+    - id: T20.5
+      scenario: A toggle control is changed, and a row with a visible predicate depends on its key
+      expect: The value comes from getControlValue and goes to setControlValue; afterwards visible is re-evaluated and the row shown, with nothing drawn again (app.js getControlBinding)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > binds a control row to the tab, and re-evaluates visible after a change without a redraw"
+
+    - id: T20.6
+      scenario: A dropdown control and a folder control with a default value are drawn
+      expect: The dropdown lists its options and shows the stored value; the folder is a field with its placeholder and the default where nothing is stored
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws a dropdown control with its options, and a folder control as a field with its placeholder"
+
+    - id: T20.16
+      scenario: A secret control is drawn with nothing stored, then an entry is picked and the choice cleared
+      expect: A SecretComponent showing an empty choice, which hands setControlValue the entry's name, then null (app.js 1.15.0 `case "secret"`)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws a secret control as the Keychain picker, handing the picked entry's name to setControlValue"
+
+    - id: T20.7
+      scenario: The tab is redrawn while a render row with the same name is on screen
+      expect: The same Setting is drawn again after its cleanup ran, without its old controls, and what the render put into settingEl itself is still there (app.js due/nue)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > redraws a row with the same key into the same element, after its cleanup and without its old controls"
+
+    - id: T20.8
+      scenario: A redraw no longer has one of the rows on screen
+      expect: That row's cleanup runs too
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > runs the cleanup of a row the redraw no longer has"
+
+    - id: T20.9
+      scenario: A group carries a class, an extra button and a row
+      expect: The group is an element with setting-group and its class, holding the heading (with the button, its icon, tooltip and click) and the row, which finds the group by closest (app.js HDe)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws a group as an element holding its heading with the extra buttons, and its rows"
+
+    - id: T20.13
+      scenario: A group's class, extra button and search change between two draws of the open tab, then the tab is reopened
+      expect: The redraw keeps the header of the first draw -- button, search box and its match -- as app.js rue does (found on the device in settings-redesign ticket 12); only the reopened tab gets the new header
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > keeps a group's header from its first draw, however the definition changes"
+
+    - id: T20.14
+      scenario: A group declares a search box and starts without rows
+      expect: No search box (app.js HDe adds it only when the group has items)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws no search box for a group that starts without rows"
+
+    - id: T20.10
+      scenario: A group with a search box is typed into, redrawn, and cleared
+      expect: match is asked for each searchable direct child only and hides what it refuses; a row with searchable false stays; the query is applied again after a redraw (obsidian.d.ts search)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > filters a group's searchable rows by its match, keeps the query across a redraw, and leaves the rest shown"
+
+    - id: T20.11
+      scenario: The plugin looks an element up by its class and asks for it to be scrolled to
+      expect: querySelector finds it at any depth, answers null for a class nothing has, and the scroll is counted
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > scrolls an element into view when asked, and finds it by its class"
+
+    - id: T20.12
+      scenario: A FuzzySuggestModal is given a placeholder, opened, and an item chosen
+      expect: It is recorded as opened, lists its items by getItemText in getItems order, closes, and hands onChooseItem the item, not its text
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the fuzzy picker > lists the items by their text, and hands back the item the user chose"
 
 - feature: T11
   name: A clock a test moves by hand

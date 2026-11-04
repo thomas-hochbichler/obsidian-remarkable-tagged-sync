@@ -25,7 +25,7 @@ const ATTACHMENT_KEY = "ATT1";
 const ITEM_KEY = "ITEM1";
 const MD5 = "0f0e3fbc4e2bd4bd16b2ab4a45f4e8a5";
 
-const ITEM: ZoteroItem = { key: ITEM_KEY, library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
+const ITEM: ZoteroItem = { key: ITEM_KEY, library: "user", title: "Best Practices für Prompting", creator: "Smith", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }], year: "2024", citationKey: "smith2024prompting" };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
 	return { key: ATTACHMENT_KEY, library: "user", parentKey: ITEM_KEY, filename: "prompting.pdf", md5: MD5, title: "Full Text PDF", ours: false, ...overrides };
@@ -34,6 +34,7 @@ function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
 	return {
 		id: "hl-9f21c4",
+		key: "page-1:1",
 		sentence: "Die Techniken gelten für alle Modelle.",
 		rects: [{ x: 72, y: 700, width: 228, height: 12 }],
 		tool: "marker",
@@ -160,6 +161,15 @@ describe("what the pass does for one written note", () => {
 		expect(parts.keys).toEqual({ zoteroKey: ITEM_KEY, zoteroLibrary: null, citekey: "smith2024prompting" });
 	});
 
+	// The Readwise book is named after the paper, not after the file on the tablet (Readwise spec §1.2).
+	it("hands back the item's title and every creator, for the Readwise book", async () => {
+		const { deps } = harness({ links: linked() });
+
+		const parts = await createZoteroPass(deps).run(unit());
+
+		expect(parts.paper).toEqual({ title: "Best Practices für Prompting", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }] });
+	});
+
 	it("remembers what it wrote, so the next sync refreshes rather than duplicates", async () => {
 		const { deps, saved } = harness({ links: linked() });
 
@@ -195,6 +205,15 @@ describe("what the pass does for one written note", () => {
 
 		expect(parts.keys.zoteroKey).toBe(ATTACHMENT_KEY);
 		expect(parts.line).toContain("[Full Text PDF](zotero://select/library/items/ATT1)");
+	});
+
+	// "Full Text PDF" is what Zotero calls an attachment, so the tablet's name is the better title.
+	it("hands back no paper for a standalone PDF", async () => {
+		const { deps } = harness({ links: linked(), client: client({ attachments: async () => [attachment({ parentKey: null })] }) });
+
+		const parts = await createZoteroPass(deps).run(unit());
+
+		expect(parts).not.toHaveProperty("paper");
 	});
 });
 
@@ -430,8 +449,8 @@ describe("pages added on the tablet (#246)", () => {
 			embedPage: 13,
 			source: null,
 			highlights: [],
-			notes: [{ id: BLOCK, anchor: { kind: "page" }, text, region: null, rect: null, top: 0, wholePage: true, section: null }],
-			added: { relation: "after", label: "12", nth: null },
+			notes: [{ id: BLOCK, key: "page-13:page", anchor: { kind: "page" }, text, region: null, rect: null, top: 0, wholePage: true, section: null }],
+			added: { relation: "after", label: "12", sourceIndex: 11, nth: null },
 		};
 	}
 

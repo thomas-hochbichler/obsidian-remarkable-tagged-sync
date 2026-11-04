@@ -117,8 +117,8 @@ export function unitStatus(pages: OcrPageResult[]): OcrStatus {
  *
  * `added-page` is a page the user added to an annotated PDF on the tablet. It reads exactly like a
  * page -- page prompt, no padding -- but it belongs to the digest, so what recovers a lost one is the
- * sync reading the document again (`SyncIndexRow.ocrRetry`), not "Re-transcribe", which refuses a
- * digest. Framed as a page, its warnings sent the user to that refusal.
+ * sync reading the document again (`SyncIndexRow.ocrRetry`), not the transcript path. Framed as a page,
+ * its warnings sent the user to a command that could not write it.
  *
  * Each backend decides what the framing means for its reader, from measurement: the model backends
  * pad the crop and switch prompts, and Apple Vision reads it tight, as it reads a page.

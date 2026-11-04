@@ -80,7 +80,8 @@ export interface CardCopy {
  */
 export type LocalCardState =
 	| { kind: "absent" }
-	| { kind: "downloading"; receivedBytes: number; totalBytes: number }
+	/** `modelInUse`: a complete model keeps transcribing beside this download; absent on a first download. */
+	| { kind: "downloading"; receivedBytes: number; totalBytes: number; modelInUse?: string }
 	| { kind: "verifying" }
 	| { kind: "paused"; onDiskBytes: number }
 	| { kind: "out-of-disk"; shortfallBytes: number }
@@ -191,10 +192,12 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 		case "downloading": {
 			const percent = state.totalBytes > 0 ? Math.floor((state.receivedBytes / state.totalBytes) * 100) : 0;
 			return {
-				heading: "Downloading the model",
+				heading: `Downloading ${generation.label}`,
 				paragraphs: [
 					`${formatBytes(state.receivedBytes)} of ${formatBytes(state.totalBytes)}.`,
-					"You can close settings — the download keeps going. Syncing still works while it runs; notes just arrive without a transcript until it is done.",
+					state.modelInUse
+						? `You can close settings — the download keeps going. Transcription keeps using ${state.modelInUse} until it is done.`
+						: "You can close settings — the download keeps going. Syncing still works while it runs; notes just arrive without a transcript until it is done.",
 				],
 				actions: [{ id: "cancel", label: "Pause", emphasis: "normal" }],
 				percent,
@@ -205,7 +208,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 			// Its own visible step, never a hash streamed alongside the download: a streamed hash cannot
 			// survive a restart mid-download, and this is minutes of disk on 5.5 GB.
 			return {
-				heading: "Verifying the download",
+				heading: `Verifying ${generation.label}`,
 				paragraphs: ["Checking the downloaded files against the SHA-256 this plugin was published with."],
 				actions: [],
 				percent: null,
@@ -214,7 +217,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 		case "paused":
 			return {
 				heading: "Download paused",
-				paragraphs: [`${formatBytes(state.onDiskBytes)} is already on disk and will not be downloaded again.`],
+				paragraphs: [`${generation.label}: ${formatBytes(state.onDiskBytes)} is already on disk and will not be downloaded again.`],
 				actions: [
 					{ id: "resume", label: "Resume", emphasis: "cta" },
 					// The button says how much it throws away, because that is the fact the answer turns on.
@@ -273,7 +276,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs.push(
 					`${state.newer.label} reads the same pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
 						`A ${formatBytes(state.newer.downloadBytes)} download, installed beside the model you have, which keeps working until you delete it.`,
-					"Notes already transcribed are not redone; 'Re-transcribe everything' does that.",
+					"Notes already transcribed are not redone; 'Re-transcribe all synced notes' does that.",
 				);
 				actions.unshift({ id: "update", label: `Get ${state.newer.label}`, emphasis: "cta" });
 			}

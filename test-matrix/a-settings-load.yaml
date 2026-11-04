@@ -155,6 +155,41 @@
       file: src/settings-store.test.ts
       test: "migrateSettings > stamps the folder a pre-1.7 row was written under (#101) > leaves a row alone when its tag is no longer mapped, it is not active, or it already carries a folder"
 
+    - id: A8.38
+      scenario: The data.json the last shipped release wrote (`test-fixtures/legacy-state`) is loaded by a build with the Readwise push
+      expect: Push off, no token entry, no books; no account, clash or recording mark
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Readwise push (Readwise spec §3) > gives the data.json the last release wrote the push off, no token and no books"
+
+    - id: A8.39
+      scenario: A readwise block holds only the toggle
+      expect: The token entry is filled from the default
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Readwise push (Readwise spec §3) > fills a half-written readwise block from the defaults"
+
+    - id: A8.40
+      scenario: readwiseBooks holds a book this build cannot read, written by another install of the vault
+      expect: Carried whole, so the next save writes it back -- `readwise-state.ts` reads books one at a time
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Readwise push (Readwise spec §3) > carries the books whole, a malformed one included"
+
+    - id: A8.42
+      scenario: readwiseBooks is a string, an array or null
+      expect: No books -- recording spreads the map, and a string would become one book per character
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Readwise push (Readwise spec §3) > reads books that are no map as none"
+
+    - id: A8.41
+      scenario: The account fingerprints and the clash and recording marks, readable and junk
+      expect: Kept when a non-empty string or `true`; otherwise absent, never a value the push would misread
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Readwise push (Readwise spec §3) > keeps the account and recording marks only where they read as such"
+
 - feature: E12
   name: Unknown or retired backend id migrates
   code: src/settings-store.ts

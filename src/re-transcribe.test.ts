@@ -60,12 +60,15 @@ const engine = vi.hoisted(() => ({
 	calls: 0,
 	/** Held open so a test can click the status bar while a run really is in flight. */
 	release: null as (() => void) | null,
+	digestRowKeys: [] as string[],
+	syncs: 0,
 }));
 vi.mock("./sync-engine", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./sync-engine")>();
 	return {
 		...actual,
 		runSync: async (_deps: unknown, index: unknown) => {
+			engine.syncs++;
 			if (engine.release === null) await new Promise<void>((resolve) => (engine.release = resolve));
 			return {
 				index,
@@ -82,7 +85,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 		},
 		reTranscribeAll: async (_deps: unknown, index: unknown) => {
 			engine.calls++;
-			return { updated: engine.updated, unreadPages: engine.unreadPages, index, stopped: engine.stopped };
+			return { updated: engine.updated, unreadPages: engine.unreadPages, index, stopped: engine.stopped, digestRowKeys: engine.digestRowKeys };
 		},
 		reTranscribeNote: async (
 			deps: {
@@ -102,7 +105,8 @@ vi.mock("./sync-engine", async (importOriginal) => {
 			deps.onProgress?.({ phase: "working", done: 1, total: 1, document: "Notebook", tag: "sync", step: "transcribing", unitDone: 1, unitTotal: 1 });
 			// The engine asks; `main.ts` decides whether there is anything worth asking about and words
 			// it. Answering here is how a test sees which of the two it did.
-			noteEngine.answer = deps.confirm === undefined ? null : await deps.confirm(noteEngine.question);
+			// A digest bails before the question, as the real engine does.
+			noteEngine.answer = deps.confirm === undefined || noteEngine.outcome.startsWith("pdf-digest") ? null : await deps.confirm(noteEngine.question);
 			return { outcome: noteEngine.answer === false ? "cancelled" : noteEngine.outcome, index: noteEngine.returned ?? index, unreadPages: noteEngine.unreadPages };
 		},
 	};
@@ -244,6 +248,8 @@ beforeEach(() => {
 	engine.stopped = false;
 	engine.calls = 0;
 	engine.release = null;
+	engine.digestRowKeys = [];
+	engine.syncs = 0;
 	noteEngine.calls = 0;
 	noteEngine.row = null;
 	noteEngine.question = { pageCount: 12, handEdited: false };
@@ -696,7 +702,7 @@ describe("what a finished one-note run leaves behind", () => {
 	it("saves nothing where the run wrote nothing", async () => {
 		// A refusal must not rewrite `data.json` -- a file Obsidian Sync is watching -- to record that
 		// nothing happened.
-		noteEngine.outcome = "pdf-digest";
+		noteEngine.outcome = "pdf-digest-edited";
 		const plugin = await pluginWith({ ocrBackend: "test-free" });
 		const saveData = vi.spyOn(plugin as unknown as { saveData(data: unknown): Promise<void> }, "saveData");
 		const file = await openNote(plugin, "n0.md");
@@ -704,7 +710,8 @@ describe("what a finished one-note run leaves behind", () => {
 		await reTranscribeNote(plugin, file);
 
 		expect(saveData).not.toHaveBeenCalled();
-		expect(takeNotices()).toEqual(["Margin notes on a PDF are kept as a digest, not as a transcript. Nothing was changed."]);
+		expect(engine.syncs).toBe(0);
+		expect(takeNotices()).toEqual(['You changed "n0" by hand, so a sync leaves it as it is and cannot read its margin notes again. Nothing was changed.']);
 	});
 
 	it("says a note it could not read again was left as it was, and saves nothing", async () => {
@@ -728,6 +735,192 @@ describe("what a finished one-note run leaves behind", () => {
 		await reTranscribeNote(plugin, file);
 
 		expect(takeNotices()).toEqual(['Re-transcribed "n0". 2 pages could not be read and keep what they had before. "Copy diagnostics" shows why.']);
+	});
+});
+
+/**
+ * Margin notes live in the digest, which only a sync writes. After switching to a better backend this
+ * was the one thing no command could reach: both refused, and nothing on the tablet had changed.
+ */
+describe("reading a PDF's margin notes again", () => {
+	const digestRows = () => ({
+		rows: {
+			mine: { syncKey: "mine", notePath: "n0.md", status: "active", blockHash: "h", docId: "doc-mine", renderVersion: 33 },
+			// The same PDF under a page tag, or edited by hand: not what the reader asked for.
+			sibling: { syncKey: "sibling", notePath: "n2.md", status: "active", blockHash: "h", docId: "doc-mine", renderVersion: 33 },
+			other: { syncKey: "other", notePath: "n1.md", status: "active", blockHash: "h", docId: "doc-other", renderVersion: 33 },
+		},
+	});
+	type Rows = ReturnType<typeof digestRows>["rows"];
+	const rowsOf = (plugin: Plugin) => (plugin.data.syncIndex as unknown as { rows: Record<keyof Rows, { renderVersion?: number }> }).rows;
+
+	beforeEach(() => {
+		noteEngine.outcome = "pdf-digest";
+		engine.release = () => undefined; // nothing holds the sync open
+	});
+
+	const withDigest = (saved: Record<string, unknown> = {}) => pluginWith({ syncIndex: digestRows(), marginNotes: true, marginNotesSynced: true, ...saved });
+
+	it("makes that note due and syncs, without asking on a free backend", async () => {
+		const plugin = await withDigest({ ocrBackend: "test-free" });
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+		await settle();
+
+		expect(takeModals()).toEqual([]);
+		expect(engine.syncs).toBe(1);
+		expect(rowsOf(plugin).mine.renderVersion).toBeUndefined();
+		expect(rowsOf(plugin).sibling.renderVersion).toBe(33);
+		expect(rowsOf(plugin).other.renderVersion).toBe(33);
+		expect(takeNotices().join(" ")).not.toContain("kept as a digest");
+	});
+
+	it("asks first on a backend that costs money, and a no leaves everything alone", async () => {
+		const plugin = await withDigest({ ocrBackend: "test-paid" });
+		const file = await openNote(plugin, "n0.md");
+
+		const running = reTranscribeNote(plugin, file);
+		await settle();
+		const asked = dialog();
+		expect(asked.body).toContain('This reads the margin notes and added pages of "n0" again and sends them to the "test-paid" backend, using your API quota.');
+		asked.cancel.click();
+		await running;
+
+		expect(engine.syncs).toBe(0);
+		expect(rowsOf(plugin).mine.renderVersion).toBe(33);
+	});
+
+	it("reads them on a yes", async () => {
+		const plugin = await withDigest({ ocrBackend: "test-paid" });
+		const file = await openNote(plugin, "n0.md");
+
+		const running = reTranscribeNote(plugin, file);
+		await settle();
+		dialog().confirm.click();
+		await running;
+
+		expect(engine.syncs).toBe(1);
+		expect(rowsOf(plugin).mine.renderVersion).toBeUndefined();
+	});
+
+	it("says there is nothing to read while the switch is off", async () => {
+		const plugin = await withDigest({ ocrBackend: "test-free", marginNotes: false, marginNotesSynced: false });
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(engine.syncs).toBe(0);
+		expect(rowsOf(plugin).mine.renderVersion).toBe(33);
+		expect(takeNotices()).toEqual(['"Your notes on PDFs" is off, so there are no margin notes to read again. Nothing was changed.']);
+	});
+
+	describe("for the whole vault", () => {
+		const runAll = async (plugin: Plugin) => {
+			const running = (plugin as unknown as { reTranscribeAll(): Promise<void> }).reTranscribeAll();
+			await settle();
+			dialog().confirm.click();
+			await running;
+		};
+
+		it("makes the notes it was handed due, and syncs, with no notice about nothing re-transcribed", async () => {
+			engine.digestRowKeys = ["mine"];
+			const plugin = await withDigest({ ocrBackend: "test-free" });
+
+			await runAll(plugin);
+
+			expect(engine.syncs).toBe(1);
+			expect(rowsOf(plugin).mine.renderVersion).toBeUndefined();
+			expect(rowsOf(plugin).sibling.renderVersion).toBe(33);
+			expect(takeNotices().join(" ")).not.toContain("Re-transcribed 0");
+		});
+
+		it("says so in the question, and names the notes it leaves out", async () => {
+			const plugin = await withDigest({ ocrBackend: "test-free" });
+
+			const running = (plugin as unknown as { reTranscribeAll(): Promise<void> }).reTranscribeAll();
+			await settle();
+			const asked = dialog();
+			expect(asked.body).toContain("Margin notes on PDFs are read again too, except in notes you edited by hand.");
+			asked.cancel.click();
+			await running;
+		});
+
+		it("neither promises nor reads them while the switch is off", async () => {
+			engine.digestRowKeys = ["mine"];
+			const plugin = await withDigest({ ocrBackend: "test-free", marginNotes: false, marginNotesSynced: false });
+
+			const running = (plugin as unknown as { reTranscribeAll(): Promise<void> }).reTranscribeAll();
+			await settle();
+			const asked = dialog();
+			expect(asked.body).not.toContain("Margin notes on PDFs");
+			asked.confirm.click();
+			await running;
+
+			expect(engine.syncs).toBe(0);
+			expect(rowsOf(plugin).mine.renderVersion).toBe(33);
+		});
+
+		// Stopped means stopped: a sync starting behind the user's back would read on.
+		it("starts no sync after a stopped run", async () => {
+			engine.digestRowKeys = ["mine"];
+			engine.stopped = true;
+			const plugin = await withDigest({ ocrBackend: "test-free" });
+
+			await runAll(plugin);
+
+			expect(engine.syncs).toBe(0);
+			expect(rowsOf(plugin).mine.renderVersion).toBe(33);
+		});
+
+		it("starts no sync when nothing needs it", async () => {
+			const plugin = await withDigest({ ocrBackend: "test-free" });
+
+			await runAll(plugin);
+
+			expect(engine.syncs).toBe(0);
+		});
+	});
+});
+
+describe("the switch for margin notes, at the start of a sync", () => {
+	const rows = { rows: { a: { notePath: "n0.md", status: "active", docId: "d", renderVersion: 33 } } };
+	const versionOf = (plugin: Plugin) => (plugin.data.syncIndex as unknown as { rows: { a: { renderVersion?: number } } }).rows.a.renderVersion;
+
+	beforeEach(() => {
+		engine.release = () => undefined;
+	});
+
+	it("rewrites the notes when the switch moved since the last sync", async () => {
+		const plugin = await pluginWith({ syncIndex: rows, marginNotes: true, marginNotesSynced: false });
+
+		await plugin.syncNow();
+
+		expect(versionOf(plugin)).toBeUndefined();
+		expect(plugin.data.marginNotesSynced).toBe(true);
+	});
+
+	it("leaves them alone when it is back where it was", async () => {
+		const plugin = await pluginWith({ syncIndex: rows, marginNotes: true, marginNotesSynced: true });
+
+		await plugin.syncNow();
+
+		expect(versionOf(plugin)).toBe(33);
+	});
+
+	it("makes the Zotero-linked documents due when a Zotero switch went on", async () => {
+		const plugin = await pluginWith({
+			syncIndex: rows,
+			marginNotes: true,
+			marginNotesSynced: true,
+			zotero: { writeText: true, addRender: false },
+			zoteroSwitchesSynced: { writeText: false, addRender: false },
+			zoteroLinks: { d: { attachmentKey: "ATT1", library: "user", annotations: {} } },
+		});
+
+		await plugin.syncNow();
+
+		expect(versionOf(plugin)).toBeUndefined();
 	});
 });
 

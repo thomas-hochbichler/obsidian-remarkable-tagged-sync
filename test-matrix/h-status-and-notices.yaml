@@ -578,7 +578,7 @@
 
     - id: E15.15
       scenario: Two notes were synced while the downloaded model was selected and not yet on disk
-      expect: The sentence sends only the notebooks synced meanwhile to Re-transcribe all synced notes, and says the annotated PDFs are read again by the next sync on their own. Re-transcribe refuses a PDF's digest, so a reader sent there would wait for margin notes the command never reads
+      expect: The sentence sends only the notebooks synced meanwhile to Re-transcribe all synced notes, and says the annotated PDFs are read again by the next sync on their own, so a reader need not run anything for them
       layer: unit
       file: src/sync-notices.test.ts
       test: "modelNotReadyNotice > sends only the notebooks to re-transcribe, and says the PDFs need nothing"
@@ -608,6 +608,20 @@
       layer: unit
       file: src/explain-error.test.ts
       test: "explainError > names an outage on reMarkable's side as one, in either context"
+
+    - id: H9.4
+      scenario: A sync or a connect fails in Chromium's words for a lost connection (name not resolved, connection refused or timed out, proxy down, ...)
+      expect: '"No connection to the reMarkable cloud", in both contexts -- not "reMarkable changes their service", and while connecting not "that code was not accepted"'
+      layer: unit
+      file: src/explain-error.test.ts
+      test: "explainError > names a network failure in Chromium's words too, in either context"
+
+    - id: H9.5
+      scenario: A net error a connection would not cure (bad certificate, too many requests at once)
+      expect: It stays the unexpected-answer sentence, and so never fails over either
+      layer: unit
+      file: src/explain-error.test.ts
+      test: "explainError > keeps a net error that a connection would not cure out of it"
 
 - feature: H10
   name: A tablet in a drawer reads as a tablet in a drawer
@@ -789,3 +803,10 @@
       layer: unit
       file: src/ocr-tally.test.ts
       test: "describeOcrTally > lists what cut each answer off"
+
+    - id: H1.21
+      scenario: Diagnostics are copied
+      expect: One "Zotero:" and one "Readwise:" line, each as handed in
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > gives each integration its own line"

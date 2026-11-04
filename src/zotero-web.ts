@@ -11,6 +11,7 @@
  */
 
 import { type Fetch, obsidianFetch } from "./obsidian-fetch";
+import { MAX_RETRY_AFTER_MS, realSleep, retryOnceAfter, type Sleep, waitMs } from "./retry-after";
 import {
 	createZoteroConnection,
 	createZoteroRenders,
@@ -37,23 +38,6 @@ const API_VERSION = "3";
  */
 export const ZOTERO_WEB_TIMEOUT_MS = 15_000;
 
-/**
- * The longest wait a `Retry-After` may buy. Beyond it the call reports instead, because past half a
- * minute the honest answer to the user is "Zotero is busy, the next sync will do it" -- which is
- * exactly what write-back does with a skipped document (spec §3.4).
- */
-const MAX_BACKOFF_MS = 30_000;
-
-type Sleep = (ms: number) => Promise<void>;
-
-const realSleep: Sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-/** Seconds out of a `Backoff` or `Retry-After` header, as milliseconds, or 0 when there is nothing to wait for. */
-function waitMs(response: Response, header: string): number {
-	const seconds = Number(response.headers.get(header) ?? "");
-	return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
-}
-
 export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obsidianFetch, sleep: Sleep = realSleep): ZoteroConnection {
 	/**
 	 * The numeric user id, asked for once and then remembered.
@@ -69,7 +53,7 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obs
 
 	const send = async (url: string, init: RequestInit, timeoutMs: number | null): Promise<Response> => {
 		const wait = quietUntil - Date.now();
-		if (wait > 0) await sleep(Math.min(wait, MAX_BACKOFF_MS));
+		if (wait > 0) await sleep(Math.min(wait, MAX_RETRY_AFTER_MS));
 		let response: Response;
 		try {
 			const work = fetchImpl(url, init);
@@ -85,22 +69,9 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obs
 		return response;
 	};
 
-	/**
-	 * One request, with the one retry zotero.org itself asks for.
-	 *
-	 * A `429`/`503` with `Retry-After` is the server saying *when* to come back, and honouring it once
-	 * is the difference between a run that finishes a little later and a run that hammers a rate limit
-	 * until it is banned. Once, not in a loop: the second refusal is reported, and write-back resumes
-	 * on the next sync with nothing lost.
-	 */
-	const request = async (url: string, init: RequestInit, timeoutMs: number | null): Promise<Response> => {
-		const first = await send(url, init, timeoutMs);
-		if (first.status !== 429 && first.status !== 503) return first;
-		const retryAfter = waitMs(first, "Retry-After");
-		if (retryAfter === 0 || retryAfter > MAX_BACKOFF_MS) return first;
-		await sleep(retryAfter);
-		return await send(url, init, timeoutMs);
-	};
+	/** One request, with the one retry zotero.org itself asks for; write-back resumes on the next sync after a second refusal. */
+	const request = async (url: string, init: RequestInit, timeoutMs: number | null): Promise<Response> =>
+		await retryOnceAfter(() => send(url, init, timeoutMs), sleep);
 
 	const headers = (write: boolean): Record<string, string> => ({
 		"Zotero-API-Key": apiKey,

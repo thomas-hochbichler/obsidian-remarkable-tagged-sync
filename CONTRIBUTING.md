@@ -24,6 +24,10 @@ Node version: see `.nvmrc`.
   the count, re-baseline in the same commit with `--write`.
 - **Changelog**: add a line under `## [Unreleased]` in `CHANGELOG.md` in the same commit as
   the change.
+- **All of CI's local gates at once**: `npm run gates` runs, in CI's order, the changelog,
+  lint, typecheck, coverage, disabled-test, matrix, build and bundle gates. It stops at the
+  first that fails. Each new test needs a row in `test-matrix/`; `node scripts/matrix-link.mjs
+  --suggest` prints the skeletons, file and exact test name filled in.
 
 ## The rmv6 parser is clean-room — please keep it that way
 

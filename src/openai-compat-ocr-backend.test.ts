@@ -694,7 +694,7 @@ describe("reporting pages dropped for truncation", () => {
 		]);
 	});
 
-	it("does not send a margin note to a command that refuses it", async () => {
+	it("does not send a margin note to a command it does not need", async () => {
 		fetchMock.mockResolvedValueOnce(truncated());
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
 
@@ -742,20 +742,17 @@ describe("reporting pages dropped for truncation", () => {
 	});
 
 	/**
-	 * A margin note has no re-transcribe, and the lever here need not change the model: a full context
-	 * is fixed in the server's settings, under the same fingerprint, so no sync retries the note on its
-	 * own. Switching "Your notes on PDFs" off and on does read every note again.
+	 * The lever here need not change the model: a full context is fixed in the server's settings, under
+	 * the same fingerprint, so no sync retries the note on its own. The command does read it again.
 	 */
-	it("sends a margin note to the switch that reads it again, not to the next sync", async () => {
+	it("sends a margin note to the command that reads it again, not to the next sync", async () => {
 		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "Check the" }, finish_reason: "length" }] }));
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:3b", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()], undefined, "note");
 
 		expect(result.warnings?.[0]).toMatch(/^Margin notes were left out because the model's answer was cut off before it was complete\./);
-		expect(result.warnings?.[0]).toContain(
-			'once that is fixed, switch "Your notes on PDFs" off and on in the settings to read them again — that reads every PDF\'s margin notes again.',
-		);
+		expect(result.warnings?.[0]).toContain('once that is fixed, run "Re-transcribe this note" to read them again.');
 		expect(result.warnings?.[0]).not.toContain("the next sync reads them again");
 	});
 

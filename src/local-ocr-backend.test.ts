@@ -256,6 +256,16 @@ describe("timing", () => {
 		expect(readLocalModelSettings(blob).recentPageMs).toEqual([12_000, 16_000]);
 	});
 
+	// A card may never have been drawn for this model, so the first page it reads has to start the window.
+	it("starts a new window on a model the window was not measured on", async () => {
+		const blob: Record<string, unknown> = { recentPageMs: [1_000, 1_000], recentPageModel: "another-model" };
+		const { backend } = backendOver([textOutcome("a", 12_000)], blob);
+
+		await backend.recognize([page()]);
+
+		expect(readLocalModelSettings(blob).recentPageMs).toEqual([12_000]);
+	});
+
 	it("times only the pages that produced something", async () => {
 		const blob: Record<string, unknown> = {};
 		const { backend } = backendOver([{ kind: "page-failed", message: "no" }, textOutcome("b", 16_000)], blob);

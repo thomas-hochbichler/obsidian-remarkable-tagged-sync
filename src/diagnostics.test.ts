@@ -14,6 +14,8 @@ const BASE = {
 	ocrTally: null,
 	pendingOcrRetries: 0,
 	mappedTagCount: 1,
+	zotero: "Not set up",
+	readwise: "Off",
 	lastSyncAt: "2026-07-24T09:00:00.000Z",
 	lastSyncError: null,
 };
@@ -87,6 +89,13 @@ describe("buildDiagnostics", () => {
 		const text = buildDiagnostics(BASE);
 		expect(text).toContain("Last transcription: none since Obsidian started");
 		expect(text).not.toContain("Margin notes:");
+	});
+
+	/** A report about either integration could not say whether it was even on. */
+	it("gives each integration its own line", () => {
+		const text = buildDiagnostics({ ...BASE, zotero: "zotero.org, write text on", readwise: "Pushing, 3 books" });
+		expect(text).toContain("Zotero: zotero.org, write text on");
+		expect(text).toContain("Readwise: Pushing, 3 books");
 	});
 
 	it("includes the raw last error, which is often the whole diagnosis", () => {

@@ -37,6 +37,10 @@ Every scenario needs `id`, `scenario`, `expect`, `layer`, and **exactly one** of
 
 `tier:` may be repeated on a row where free and Pro differ inside one feature.
 
+`node scripts/matrix-link.mjs --suggest` prints a skeleton row for every test that still needs one,
+`file:` and the exact `test:` name filled in; add `id`, `scenario` and `expect`, then paste it under
+its feature.
+
 ## Two rules that are easy to get wrong
 
 **A row binds to a test by its file plus the exact `describe > it` name** — never by an id embedded

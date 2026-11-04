@@ -1,15 +1,26 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as obsidianSurface from "./obsidian";
 import {
 	checkPath,
 	createFragment,
 	debounce,
 	DropdownComponent,
 	FakeApp,
+	type FakeDefinition,
 	FakeEl,
 	FakeVault,
+	FuzzySuggestModal,
 	normalizePath,
 	parseLinktext,
 	Plugin,
+	PluginSettingTab,
+	renderSettingTab,
+	type SecretComponent,
+	Setting,
+	takeModals,
+	takeSettings,
 	TFile,
 	TFolder,
 } from "./fake-obsidian";
@@ -23,6 +34,29 @@ describe("the plugin's module graph", () => {
 	it("loads against this fake, which is the whole reason the fake exists", async () => {
 		const main = await import("../../src/main");
 		expect(typeof main.default).toBe("function");
+	});
+
+	// `tsc` checks these imports against the real obsidian.d.ts, so a name the surface lacks passes
+	// the typecheck and fails only when a test reaches it ("requireApiVersion is not a function").
+	it("exports every value a non-test file imports from obsidian", () => {
+		const missing: string[] = [];
+		const walk = (dir: string): void => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				const full = join(dir, entry.name);
+				if (entry.isDirectory()) walk(full);
+				else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") && !entry.name.endsWith(".d.ts")) {
+					for (const [, typeOnly, names] of readFileSync(full, "utf8").matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*"obsidian"/g)) {
+						if (typeOnly) continue;
+						for (const name of names.split(",").map((n) => n.trim().split(/\s+as\s+/)[0])) {
+							if (name && !name.startsWith("type ") && !(name in obsidianSurface)) missing.push(`${name} (${full.replace(`${process.cwd()}/`, "")})`);
+						}
+					}
+				}
+			}
+		};
+		walk(join(process.cwd(), "src"));
+		walk(join(process.cwd(), "pro"));
+		expect(missing).toEqual([]);
 	});
 });
 
@@ -369,5 +403,337 @@ describe("the settings controls the plugin reaches past", () => {
 
 		el.toggle(true);
 		expect(el.visible).toBe(true);
+	});
+
+	// 1.15.0's app.js: `setDisabled(t){this.disabled=t,…;for(let i of components)i.setDisabled(t)}`, which
+	// is how a control row's `disabled` reaches its switch.
+	it("disables a row's components with the row, and opens them again", () => {
+		const setting = new Setting(new FakeEl()).addToggle(() => undefined).addText(() => undefined);
+
+		setting.setDisabled(true);
+		expect([setting.disabled, setting.toggles[0].disabled, setting.texts[0].disabled]).toEqual([true, true, true]);
+
+		setting.setDisabled(false);
+		expect([setting.toggles[0].disabled, setting.texts[0].disabled]).toEqual([false, false]);
+	});
+});
+
+describe("the declarative settings tab", () => {
+	/** A tab drawing the definitions a test hands it. */
+	function tabOf(definitions: () => FakeDefinition[]): PluginSettingTab {
+		const tab = new PluginSettingTab(new FakeApp(), new Plugin(new FakeApp()));
+		tab.getSettingDefinitions = definitions;
+		return tab;
+	}
+
+	it("draws a group's heading, then its rows, and a page as one entry on the root", () => {
+		takeSettings();
+		const tab = tabOf(() => [
+			{ type: "group", heading: "Vault output", items: [{ name: "Folder", desc: "Where it goes." }] },
+			{ type: "page", name: "Zotero", items: [{ name: "Connection" }] },
+		]);
+
+		renderSettingTab(tab);
+		expect(takeSettings().map((setting) => [setting.name, setting.heading])).toEqual([
+			["Vault output", true],
+			["Folder", false],
+			["Zotero", false],
+		]);
+
+		renderSettingTab(tab, { page: "Zotero" });
+		expect(takeSettings().map((setting) => setting.name)).toEqual(["Connection"]);
+	});
+
+	// obsidian.d.ts: a render callback "may return a cleanup function, invoked before the row is torn down".
+	it("runs a render row's cleanup before every redraw and when the tab closes", () => {
+		const torn: string[] = [];
+		const tab = tabOf(() => [{ name: "Line", render: () => () => void torn.push("line") }]);
+
+		renderSettingTab(tab);
+		tab.update();
+		expect(torn).toEqual(["line"]);
+
+		tab.hide();
+		expect(torn).toEqual(["line", "line"]);
+		tab.update();
+		expect(torn).toEqual(["line", "line"]);
+	});
+
+	// obsidian.d.ts 1.13.1: a page's `displayValue` and `status` "surface the current value on the entry"
+	// (a `DisplayValueComponent`); ticket 17's F7 saw both asked again on every draw of the root.
+	it("shows a page entry's value and status, asked again on every draw", () => {
+		takeSettings();
+		let count = 1;
+		const tab = tabOf(() => [
+			{ type: "page", name: "Zotero", displayValue: () => `Count ${count}`, status: () => (count % 2 === 0 ? "warning" : null), items: [] },
+		]);
+
+		renderSettingTab(tab);
+		expect(takeSettings()[0].components).toEqual([expect.objectContaining({ value: "Count 1", status: null })]);
+
+		count = 2;
+		renderSettingTab(tab);
+		expect(takeSettings()[0].components).toEqual([expect.objectContaining({ value: "Count 2", status: "warning" })]);
+	});
+
+	// app.js `getControlBinding`: the value comes from `getControlValue`, a change is `await
+	// setControlValue` and then `refreshDomState()`, which hides and shows without drawing anything again.
+	it("binds a control row to the tab, and re-evaluates visible after a change without a redraw", async () => {
+		// The debounce tests above leave fake timers installed.
+		vi.useRealTimers();
+		takeSettings();
+		const stored: Record<string, unknown> = { on: false };
+		const tab = tabOf(() => [
+			{ name: "Switch", control: { type: "toggle", key: "on" } },
+			{ name: "Shown when on", visible: () => stored.on === true },
+		]);
+		tab.getControlValue = (key) => stored[key];
+		tab.setControlValue = async (key, value) => void (stored[key] = value);
+
+		renderSettingTab(tab);
+		const [toggle, shown] = takeSettings();
+		expect(toggle.toggles[0].value).toBe(false);
+		expect(shown.settingEl.visible).toBe(false);
+
+		toggle.toggles[0].toggle(true);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(stored.on).toBe(true);
+		expect(shown.settingEl.visible).toBe(true);
+		expect(takeSettings()).toEqual([]);
+	});
+
+	// app.js `due`/`nue`: a redraw keeps a row whose key it drew before, runs its cleanup, clears its
+	// controls and draws the definition into the same `Setting` -- what the render put into `settingEl`
+	// itself stays.
+	it("redraws a row with the same key into the same element, after its cleanup and without its old controls", () => {
+		takeSettings();
+		const log: string[] = [];
+		const tab = tabOf(() => [
+			{
+				name: "Row",
+				render: (setting) => {
+					setting.settingEl.createDiv({ cls: "drawn" });
+					setting.addButton((button) => button.setButtonText("Go"));
+					return () => void log.push("cleanup");
+				},
+			},
+		]);
+
+		renderSettingTab(tab);
+		const [first] = takeSettings();
+		tab.update();
+		const [again] = takeSettings();
+
+		expect(again).toBe(first);
+		expect(log).toEqual(["cleanup"]);
+		expect(again.buttons.map((button) => button.text)).toEqual(["Go"]);
+		expect(again.settingEl.children.filter((child) => child.classes.has("drawn"))).toHaveLength(2);
+	});
+
+	it("runs the cleanup of a row the redraw no longer has", () => {
+		const log: string[] = [];
+		let rows = ["Kept", "Dropped"];
+		const tab = tabOf(() => rows.map((name) => ({ name, render: () => () => void log.push(name) })));
+
+		renderSettingTab(tab);
+		rows = ["Kept"];
+		tab.update();
+
+		expect(log).toEqual(["Kept", "Dropped"]);
+	});
+
+	it("draws a dropdown control with its options, and a folder control as a field with its placeholder", () => {
+		takeSettings();
+		const tab = tabOf(() => [
+			{ name: "Pick", control: { type: "dropdown", key: "pick", options: { a: "A", b: "B" } } },
+			{ name: "Folder", control: { type: "folder", key: "folder", placeholder: "Here", defaultValue: "There" } },
+		]);
+		tab.getControlValue = (key) => (key === "pick" ? "b" : undefined);
+
+		renderSettingTab(tab);
+		const [pick, folder] = takeSettings();
+
+		expect(pick.dropdowns[0].options).toEqual({ a: "A", b: "B" });
+		expect(pick.dropdowns[0].value).toBe("b");
+		expect(folder.texts[0]).toMatchObject({ placeholder: "Here", value: "There" });
+	});
+
+	// app.js 1.15.0: `addComponent(c => new SecretComponent(app, c).setValue(value || "").onChange(change))`.
+	it("draws a secret control as the Keychain picker, handing the picked entry's name to setControlValue", async () => {
+		takeSettings();
+		const tab = tabOf(() => [{ name: "Token", control: { type: "secret", key: "token" } }]);
+		const set: unknown[] = [];
+		tab.getControlValue = () => null;
+		tab.setControlValue = (_key, value) => void set.push(value);
+
+		renderSettingTab(tab);
+		const picker = takeSettings()[0].components[0] as SecretComponent;
+		expect(picker.value).toBe("");
+		await picker.pick("entry");
+		await picker.pick(null);
+
+		expect(set).toEqual(["entry", null]);
+	});
+
+	it("refuses a definition field it does not model, rather than drawing it as understood", () => {
+		const tab = tabOf(() => [{ type: "group", visible: false, items: [] } as FakeDefinition]);
+
+		expect(() => renderSettingTab(tab)).toThrow('a definition\'s "visible" is not modelled yet');
+	});
+
+	it("refuses a list, which it does not model either", () => {
+		const tab = tabOf(() => [{ type: "list", items: [] }]);
+
+		expect(() => renderSettingTab(tab)).toThrow('a definition\'s "list" is not modelled yet');
+	});
+
+	// obsidian.d.ts: `extraButtons` are "for the header", and `cls` goes on the group element, which
+	// holds the header and the rows (app.js `HDe`: `setting-group`, then header, search, items).
+	it("draws a group as an element holding its heading with the extra buttons, and its rows", () => {
+		takeSettings();
+		const clicked: string[] = [];
+		const tab = tabOf(() => [
+			{
+				type: "group",
+				heading: "Tags",
+				cls: "my-group",
+				extraButtons: [(button) => button.setIcon("refresh-cw").setTooltip("Scan").onClick(() => clicked.push("scan"))],
+				items: [{ name: "Row" }],
+			},
+		]);
+
+		renderSettingTab(tab);
+		const [heading, row] = takeSettings();
+		heading.extraButtons[0].click();
+
+		expect(heading.extraButtons.map((button) => [button.icon, button.tooltip])).toEqual([["refresh-cw", "Scan"]]);
+		expect(clicked).toEqual(["scan"]);
+		const groupEl = tab.containerEl.querySelector(".my-group");
+		expect(groupEl?.classes.has("setting-group")).toBe(true);
+		expect(row.settingEl.closest(".my-group")).toBe(groupEl);
+		expect(row.settingEl.closest(".nowhere")).toBeNull();
+	});
+
+	// app.js `rue`: a redraw that finds a group with the same key (`id`, else its heading) sets its
+	// heading and draws its items again -- the class, the extra buttons and the search box, with its
+	// `match`, stay as the group's first draw made them. Only a group drawn anew gets the new ones.
+	it("keeps a group's header from its first draw, however the definition changes", () => {
+		takeSettings();
+		let round = 1;
+		const tab = tabOf(() => [
+			{
+				type: "group",
+				heading: "Tags",
+				cls: `round-${round}`,
+				extraButtons: [(button) => button.setTooltip(`round ${round}`)],
+				search: { placeholder: `round ${round}`, match: () => round === 1 },
+				items: [{ name: "Row" }],
+			},
+		]);
+
+		renderSettingTab(tab);
+		round = 2;
+		tab.update();
+		const [heading] = takeSettings().slice(-2);
+
+		expect(heading.extraButtons.map((button) => button.tooltip)).toEqual(["round 1"]);
+		expect(tab.groupSearch("Tags").placeholder).toBe("round 1");
+		expect(tab.containerEl.querySelector(".round-2")).toBeNull();
+
+		tab.hide();
+		renderSettingTab(tab);
+		expect(tab.groupSearch("Tags").placeholder).toBe("round 2");
+	});
+
+	// app.js `HDe`: the search box is added only `if (o.search && o.items && o.items.length > 0)`.
+	it("draws no search box for a group that starts without rows", () => {
+		const tab = tabOf(() => [{ type: "group", heading: "Empty", search: { match: () => true }, items: [] }]);
+
+		renderSettingTab(tab);
+
+		expect(() => tab.groupSearch("Empty")).toThrow('no group "Empty" with a search box');
+	});
+
+	// obsidian.d.ts `search`: `match(def, query)` is called "for each direct child definition", items with
+	// `searchable: false` "bypass this filter and always show", and "the query is preserved across
+	// re-renders and the filter is reapplied after each render".
+	it("filters a group's searchable rows by its match, keeps the query across a redraw, and leaves the rest shown", () => {
+		takeSettings();
+		const asked: string[] = [];
+		const tab = tabOf(() => [
+			{
+				type: "group",
+				heading: "Fruit",
+				search: {
+					placeholder: "Filter fruit",
+					match: (def, query) => {
+						asked.push(`${def.name}:${query}`);
+						return (def.name ?? "").includes(query);
+					},
+				},
+				items: [{ name: "apple" }, { name: "pear" }, { name: "note", searchable: false }],
+			},
+		]);
+		renderSettingTab(tab);
+		const visibleNames = (): string[] =>
+			takeSettings()
+				.filter((setting) => !setting.heading && setting.settingEl.visible)
+				.map((setting) => setting.name);
+
+		const search = tab.groupSearch("Fruit");
+		expect(search.placeholder).toBe("Filter fruit");
+		search.type("ap");
+		expect(visibleNames()).toEqual(["apple", "note"]);
+		expect(asked).toEqual(["apple:ap", "pear:ap"]);
+
+		tab.update();
+		expect(visibleNames()).toEqual(["apple", "note"]);
+
+		tab.groupSearch("Fruit").type("");
+		tab.update();
+		expect(visibleNames()).toEqual(["apple", "pear", "note"]);
+	});
+
+	it("scrolls an element into view when asked, and finds it by its class", () => {
+		const root = new FakeEl();
+		const target = root.createDiv().createDiv({ cls: "far down" });
+
+		root.querySelector(".down")?.scrollIntoView();
+
+		expect(target.scrolledIntoView).toBe(1);
+		expect(root.querySelector(".nowhere")).toBeNull();
+	});
+});
+
+// obsidian.d.ts: a `FuzzySuggestModal` lists `getItems()` by `getItemText`, and choosing one calls
+// `onChooseItem`.
+describe("the fuzzy picker", () => {
+	class Picker extends FuzzySuggestModal<string> {
+		chosen: string[] = [];
+		getItems(): string[] {
+			return ["/", "Work"];
+		}
+		getItemText(item: string): string {
+			return item === "/" ? "Vault root" : item;
+		}
+		onChooseItem(item: string): void {
+			this.chosen.push(item);
+		}
+	}
+
+	it("lists the items by their text, and hands back the item the user chose", () => {
+		takeModals();
+		const picker = new Picker(new FakeApp());
+		picker.setPlaceholder("Choose a folder");
+		picker.open();
+
+		expect(takeModals()).toEqual([picker]);
+		expect(picker.placeholder).toBe("Choose a folder");
+		expect(picker.itemTexts).toEqual(["Vault root", "Work"]);
+
+		picker.choose("Vault root");
+		expect(picker.chosen).toEqual(["/"]);
+		expect(picker.opened).toBe(false);
 	});
 });

@@ -12,11 +12,11 @@ function top(pdfY: number): number {
 }
 
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
-	return { id: "hl-000000", sentence: "", rects: [], tool: "marker", marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
+	return { id: "hl-000000", key: "page-1:1", sentence: "", rects: [], tool: "marker", marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
 }
 
 function note(overrides: Partial<DigestNote> = {}): DigestNote {
-	return { id: "nt-000000", anchor: { kind: "page" }, text: "", region: null, rect: null, top: 0, ...overrides };
+	return { id: "nt-000000", key: "page-1:2", anchor: { kind: "page" }, text: "", region: null, rect: null, top: 0, ...overrides };
 }
 
 function page(overrides: Partial<DigestPage> = {}): DigestPage {

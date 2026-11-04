@@ -140,7 +140,7 @@ describe("the block a digest entry carries", () => {
 				embedPage: 7,
 				source: null,
 				highlights: [],
-				notes: [{ id: "nt-1", anchor: { kind: "page" }, text: "check table 2", region, rect: null, top: 0, section: null }],
+				notes: [{ id: "nt-1", key: "page-1:1", anchor: { kind: "page" }, text: "check table 2", region, rect: null, top: 0, section: null }],
 			},
 		]);
 

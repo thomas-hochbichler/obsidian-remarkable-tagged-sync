@@ -12,6 +12,72 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-04
+
+Needs Obsidian 1.13.4 or newer. On an older Obsidian the community store keeps you on 1.10.x; update
+Obsidian to get this release.
+
+### Added
+
+- **Push your highlights to Readwise** (Pro). Switch on *Push highlights to Readwise*, add your
+  Readwise access token, and every sync puts the highlights of your annotated PDFs, EPUBs and typed
+  pages into your Readwise library: one entry per document (an EPUB under Books, anything else under
+  Articles), the sentence each mark sits in with your marked words in bold, your margin notes as
+  highlight notes, and a link from each highlight to its page in the PDF in your vault, which works
+  from the Readwise app on your phone too. The link carries your vault's name. They come up in your
+  Daily Review. Erase a mark on the tablet and it goes from Readwise too; an edit you make in Readwise
+  stays until that highlight, or the reading of its margin note, changes. A name or category you
+  give a book in Readwise is kept, and a book you delete there stays deleted. Only text is sent;
+  your handwriting and page images stay on your machine. Needs a Readwise plan with API access.
+- ***Open in Readwise*** opens the Readwise book of the note you are in.
+- ***Push to Readwise again*** brings back a book you deleted in Readwise: it syncs and pushes the
+  note you are in as a new book.
+
+### Fixed
+
+- **A lost connection now reads as one, and switches to your tablet.** With no internet behind your Wi-Fi,
+  or a proxy that does not answer, the plugin said reMarkable might have changed their service, or while
+  connecting that your code was wrong, and *If that is not reachable* did not take over. Both now know
+  these failures, and when the tablet does not answer either, the notice says so about both. On a Mac, a
+  tablet gone from the Wi-Fi now counts as not answering too, so the USB cable and the cloud are tried.
+- **A note that failed to render is tried again.** It used to stay as it was until the document changed
+  on the tablet again, although the sync had reported the failure.
+- ***Re-transcribe this note* now reads a PDF's margin notes again.** It used to refuse, and *Re-transcribe
+  all synced notes* did not reach them either, so a margin note misread by one backend stayed misread
+  after switching to a better one. Both now read them again through a sync; on a paid backend *Re-transcribe
+  this note* asks first. *Re-transcribe all synced notes* also no longer sends those PDFs' pages to the
+  backend for a transcript it could not write.
+- **Reading margin notes again can no longer cost you a good reading.** If the backend is off or refuses
+  and nothing changed on the tablet, the note stays as it was instead of saying "could not be
+  transcribed", and a later sync tries again.
+- **A hand-edited note no longer makes its PDF's other notes read again on every sync.** A note that is
+  up to date is now left alone when its document opens for another note's sake.
+- After a failed download of a newer local model, *Resume* and *Delete and start over* act on that model.
+  They used to act on the one in use, and deleting it took the working model and its engine with it.
+- With two local models on disk, the card no longer offers to download the one you have, and *Delete the
+  model* removes only the one shown, keeping the engine and the backend for the other.
+- The local model's speed figure belongs to the model it was measured on: it is measured anew after a
+  change of model, and says "1 second", not "1 seconds".
+- An active licence is no longer offered *Start free trial*.
+
+### Changed
+
+- *Copy diagnostics* also says how Zotero and Readwise are set up and how much they hold, in counts: no
+  key, token or title.
+- The *Tagged Sync Pro* row names everything Pro brings, Readwise and Zotero write-back included.
+
+- **The settings are reorganised:** the reMarkable connection first, then tag routing, vault output,
+  transcription and automatic sync; Zotero and Readwise each have their own page under
+  *Integrations*, which shows whether they are set up. Unmapped tags show as compact tags you click
+  to choose a folder, and most settings can now be found from Obsidian's settings search.
+- While the local model downloads, its card says which model it is and which folder it goes to, and,
+  when a working model stays in use meanwhile, that this one keeps transcribing.
+- **A switch knocked off and straight back on no longer reads margin notes again.** *Your notes on PDFs*,
+  *Write text to Zotero* and *Add the render to Zotero* now take effect at the next sync, and only if they
+  then differ from the last one.
+- The first sync after switching Readwise on re-renders every note once, and reads your margin notes
+  and added pages again with your transcription backend; handwritten notebook transcripts are kept.
+
 ## [1.10.1] - 2026-11-04
 
 ### Fixed

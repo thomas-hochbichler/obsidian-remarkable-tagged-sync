@@ -6,7 +6,7 @@ import type { ZoteroItem } from "./zotero-client";
 import type { ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, itemLabel, openPdfUrl, webReaderUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo } from "./zotero-note";
 
-const ITEM: ZoteroItem = { key: "KX7Q2R4M", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
+const ITEM: ZoteroItem = { key: "KX7Q2R4M", library: "user", title: "Best Practices für Prompting", creator: "Smith", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }], year: "2024", citationKey: "smith2024prompting" };
 
 function info(overrides: Partial<ZoteroNoteInfo> = {}): ZoteroNoteInfo {
 	return {
@@ -154,7 +154,7 @@ describe("the link a quote carries once it is in Zotero", () => {
 	}
 
 	function highlight(id: string): DigestHighlight {
-		return { id, sentence: "Ein Satz.", rects: [{ x: 1, y: 2, width: 3, height: 4 }], tool: "marker", marked: [], color: null, notes: [], section: "Prinzipien", top: 10 };
+		return { id, key: `page-1:${id}`, sentence: "Ein Satz.", rects: [{ x: 1, y: 2, width: 3, height: 4 }], tool: "marker", marked: [], color: null, notes: [], section: "Prinzipien", top: 10 };
 	}
 
 	function link(overrides: Partial<ZoteroLink> = {}): ZoteroLink {
@@ -209,6 +209,7 @@ describe("the link a quote carries once it is in Zotero", () => {
 	it("is not offered for a margin note", () => {
 		const note: DigestNote & { section: string | null } = {
 			id: "nt-4c8a17",
+			key: "page-1:2",
 			anchor: { kind: "page" },
 			text: "eine Randnotiz",
 			region: null,
@@ -233,6 +234,7 @@ describe("the note of spec §4", () => {
 	it("renders the sample", () => {
 		const highlight: DigestHighlight = {
 			id: "hl-9f21c4",
+			key: "page-1:1",
 			sentence: "Die Techniken … gelten für alle aktuellen Claude-Modelle, …",
 			rects: [{ x: 72, y: 700, width: 228, height: 12 }],
 			tool: "marker",
