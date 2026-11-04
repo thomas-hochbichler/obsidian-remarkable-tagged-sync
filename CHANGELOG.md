@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-04
+
 Needs Obsidian 1.13.4 or newer. On an older Obsidian the community store keeps you on 1.10.x; update
 Obsidian to get this release.
 

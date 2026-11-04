@@ -120,4 +120,4 @@ system.
   highlighted sentences, margin notes and pages you added, as text. The render carries its text layer, so the transcript goes along with it. See the
   README.
 
-*Last updated: 2026-11-03.*
+*Last updated: 2026-11-04.*
