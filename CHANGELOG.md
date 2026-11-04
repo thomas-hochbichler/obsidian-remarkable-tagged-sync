@@ -35,6 +35,11 @@ Obsidian to get this release.
 
 ### Fixed
 
+- **A lost connection now reads as one, and switches to your tablet.** With no internet behind your Wi-Fi,
+  or a proxy that does not answer, the plugin said reMarkable might have changed their service, or while
+  connecting that your code was wrong, and *If that is not reachable* did not take over. Both now know
+  these failures, and when the tablet does not answer either, the notice says so about both. On a Mac, a
+  tablet gone from the Wi-Fi now counts as not answering too, so the USB cable and the cloud are tried.
 - **A note that failed to render is tried again.** It used to stay as it was until the document changed
   on the tablet again, although the sync had reported the failure.
 - ***Re-transcribe this note* now reads a PDF's margin notes again.** It used to refuse, and *Re-transcribe
@@ -53,8 +58,13 @@ Obsidian to get this release.
   model* removes only the one shown, keeping the engine and the backend for the other.
 - The local model's speed figure belongs to the model it was measured on: it is measured anew after a
   change of model, and says "1 second", not "1 seconds".
+- An active licence is no longer offered *Start free trial*.
 
 ### Changed
+
+- *Copy diagnostics* also says how Zotero and Readwise are set up and how much they hold, in counts: no
+  key, token or title.
+- The *Tagged Sync Pro* row names everything Pro brings, Readwise and Zotero write-back included.
 
 - **The settings are reorganised:** the reMarkable connection first, then tag routing, vault output,
   transcription and automatic sync; Zotero and Readwise each have their own page under

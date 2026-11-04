@@ -143,6 +143,13 @@ export function zoteroPageEntry(settings: ZoteroSettings, entitlement: Entitleme
 	return { value: local ? "Desktop app" : "Not set up", status: null };
 }
 
+/** The Zotero line in *Copy diagnostics*. Goes into public issues, so it holds no key and no library's name. */
+export function zoteroDiagnosticsLine(settings: ZoteroSettings, entitlement: Entitlement, linkedDocuments: number): string {
+	const onOff = (value: boolean) => (value ? "on" : "off");
+	const writing = zoteroProAllowed(entitlement) ? `write text ${onOff(settings.writeText)}, add render ${onOff(settings.addRender)}` : "writing needs Pro";
+	return `${zoteroPageEntry(settings, entitlement).value}, ${writing}, ${linkedDocuments} ${linkedDocuments === 1 ? "document" : "documents"} linked`;
+}
+
 /** Reads and writes the granted local keys wherever the plugin keeps its settings. */
 export interface ZoteroSettingsStore {
 	settings(): ZoteroSettings;

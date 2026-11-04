@@ -12,7 +12,7 @@
  * key stops the run and says so, exactly as it did when there was one transport.
  */
 
-import type { Transport, TransportSession } from "./transport";
+import { BothSourcesFailedError, type Transport, type TransportSession } from "./transport";
 
 export interface TransportChain {
 	readonly primary: Transport;
@@ -40,7 +40,11 @@ export async function openTransportChain(chain: TransportChain): Promise<OpenedT
 	} catch (error) {
 		const { fallback } = chain;
 		if (fallback === null || !chain.primary.isUnreachable(error) || !fallback.status().connected) throw error;
-		return { transport: fallback, session: await fallback.open(), failedOverFrom: chain.primary };
+		try {
+			return { transport: fallback, session: await fallback.open(), failedOverFrom: chain.primary };
+		} catch (fallbackError) {
+			throw new BothSourcesFailedError(chain.primary, error, fallback, fallbackError);
+		}
 	}
 }
 

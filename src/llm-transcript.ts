@@ -3,6 +3,7 @@ import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
+import { CHROMIUM_UNREACHABLE } from "./explain-error";
 import type { Fetch } from "./obsidian-fetch";
 
 /**
@@ -558,6 +559,8 @@ export async function refusalDetail(response: Response): Promise<string> {
 	}
 }
 
+const UNREACHABLE_RE = new RegExp(`econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up|${CHROMIUM_UNREACHABLE}`, "i");
+
 /**
  * Whether a thrown request error means *nothing answered at that address*, as opposed to answering
  * badly. Matched on the text because Electron's fetch exposes no stable typed error -- the same
@@ -571,5 +574,5 @@ export async function refusalDetail(response: Response): Promise<string> {
  */
 export function isUnreachable(error: unknown): boolean {
 	const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-	return /econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up|err_connection_(refused|reset|closed|failed|timed_out)|err_name_not_resolved|err_address_unreachable|err_internet_disconnected/i.test(text);
+	return UNREACHABLE_RE.test(text);
 }

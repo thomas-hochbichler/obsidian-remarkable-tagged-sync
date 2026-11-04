@@ -609,6 +609,20 @@
       file: src/explain-error.test.ts
       test: "explainError > names an outage on reMarkable's side as one, in either context"
 
+    - id: H9.4
+      scenario: A sync or a connect fails in Chromium's words for a lost connection (name not resolved, connection refused or timed out, proxy down, ...)
+      expect: '"No connection to the reMarkable cloud", in both contexts -- not "reMarkable changes their service", and while connecting not "that code was not accepted"'
+      layer: unit
+      file: src/explain-error.test.ts
+      test: "explainError > names a network failure in Chromium's words too, in either context"
+
+    - id: H9.5
+      scenario: A net error a connection would not cure (bad certificate, too many requests at once)
+      expect: It stays the unexpected-answer sentence, and so never fails over either
+      layer: unit
+      file: src/explain-error.test.ts
+      test: "explainError > keeps a net error that a connection would not cure out of it"
+
 - feature: H10
   name: A tablet in a drawer reads as a tablet in a drawer
   code: src/status-model.ts
@@ -789,3 +803,10 @@
       layer: unit
       file: src/ocr-tally.test.ts
       test: "describeOcrTally > lists what cut each answer off"
+
+    - id: H1.21
+      scenario: Diagnostics are copied
+      expect: One "Zotero:" and one "Readwise:" line, each as handed in
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > gives each integration its own line"

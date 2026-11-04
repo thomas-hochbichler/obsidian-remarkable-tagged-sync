@@ -7,6 +7,7 @@ import {
 	DEFAULT_ZOTERO_SETTINGS,
 	zoteroProAllowed,
 	webConfigured, zoteroConfigured,
+	zoteroDiagnosticsLine,
 	zoteroPageEntry,
 	type ZoteroSettings,
 	zoteroSettingsStore,
@@ -157,6 +158,24 @@ describe("the Zotero page's entry", () => {
 		expect(table.map(([settings, entitlement]) => zoteroPageEntry(settings, entitlement))).toEqual(
 			table.map(([, , value, status]) => ({ value, status })),
 		);
+	});
+});
+
+// A line a reporter pastes into a public issue, so it says what is set up and carries no key.
+describe("the Zotero line in the diagnostics", () => {
+	const BOTH: ZoteroSettings = { ...WEB_ONLY, useLocal: true, writeText: true, addRender: false };
+
+	it("says the connection, the two switches and how many documents are linked", () => {
+		expect(zoteroDiagnosticsLine(BOTH, BOUGHT, 5)).toBe("zotero.org + desktop app, write text on, add render off, 5 documents linked");
+		expect(zoteroDiagnosticsLine({ ...BOTH, writeText: false, addRender: true }, TRIAL, 1)).toBe("zotero.org + desktop app, write text off, add render on, 1 document linked");
+	});
+
+	it("does not report switches a free vault cannot use", () => {
+		expect(zoteroDiagnosticsLine(BOTH, FREE, 0)).toBe("zotero.org, writing needs Pro, 0 documents linked");
+	});
+
+	it("never carries the API key", () => {
+		expect(zoteroDiagnosticsLine(BOTH, BOUGHT, 5)).not.toContain(BOTH.apiKey);
 	});
 });
 

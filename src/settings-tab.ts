@@ -40,6 +40,7 @@ import {
 	type ReadwiseConnection,
 	readwiseClashed,
 	readwiseConnectionLine,
+	readwiseDiagnosticsLine,
 	readwisePageEntry,
 	readwiseProAllowed,
 	startOverReadwise,
@@ -50,7 +51,8 @@ import { folderLabel, type MappedTag, planTagRouting, REMOVAL_MESSAGE, type Unma
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
-import { webConfigured, zoteroPageEntry, zoteroProAllowed } from "./zotero-settings";
+import { linkedDocumentIds } from "./zotero-links";
+import { webConfigured, zoteroDiagnosticsLine, zoteroPageEntry, zoteroProAllowed } from "./zotero-settings";
 import type { ZoteroGroup } from "./zotero-client";
 import { visionRunStats } from "./vision-ocr-backend";
 
@@ -632,12 +634,13 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 	/** The status row's buttons. Every one that changes the licence ends in `update()`: the "(Pro)" names everywhere depend on it. */
 	private renderLicenceButtons(statusRow: Setting): void {
-		const entitlement = this.plugin.entitlement();
+		const licenceRunning = this.plugin.entitlement().tier === "pro";
 		// One click, no key, no email. The trial is the only way a Windows or Linux user can judge
 		// cloud transcription before paying. There is deliberately no restart button -- one would turn
 		// the purchase into a donation -- and since 1.8 the start date comes signed from taggedsync.com,
-		// so deleting it by hand is not a restart either (`trial-ticket.ts`).
-		if (this.plugin.data.licence.trialStartedAt === null) {
+		// so deleting it by hand is not a restart either (`trial-ticket.ts`). A running licence has nothing
+		// to try: the trial would unlock what it already unlocks.
+		if (this.plugin.data.licence.trialStartedAt === null && !licenceRunning) {
 			statusRow.addButton((button) =>
 				button
 					.setButtonText("Start free trial")
@@ -662,7 +665,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			);
 		}
 
-		if (entitlement.tier === "pro") {
+		if (licenceRunning) {
 			statusRow.addButton((button) =>
 				button.setButtonText("Manage devices").onClick(() => window.open(PRO_PORTAL_URL)),
 			);
@@ -1226,6 +1229,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				ocrTally: this.plugin.lastOcrTally,
 				pendingOcrRetries: pendingOcrRetries(this.plugin.data.syncIndex),
 				mappedTagCount: Object.keys(this.plugin.data.tagFolderMap).length,
+				zotero: zoteroDiagnosticsLine(this.plugin.data.zotero, this.plugin.entitlement(), linkedDocumentIds(this.plugin.data.zoteroLinks).length),
+				readwise: readwiseDiagnosticsLine(this.plugin.data, this.plugin.entitlement(), this.plugin.readwiseLastCheck, () => this.plugin.readwiseToken()),
 				lastSyncAt: this.plugin.data.lastSyncAt,
 				lastSyncError: this.plugin.lastSyncError,
 			}),

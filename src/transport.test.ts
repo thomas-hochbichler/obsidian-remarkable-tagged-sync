@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { CloudTransport } from "./cloud-transport";
 import type { RemarkableAuth } from "./remarkable-auth";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
-import { explainTransportError, type Transport } from "./transport";
+import { BothSourcesFailedError, explainTransportError, type Transport, type TransportSession } from "./transport";
+import { openTransportChain } from "./transport-chain";
 
 vi.mock("rmapi-js", () => ({
 	session: vi.fn(() => ({
@@ -53,6 +54,18 @@ describe("CloudTransport", () => {
 		expect(transport.isUnreachable(new Error("401 unauthorized"))).toBe(false);
 	});
 
+	// "If that is not reachable" asks this very question: a name that did not resolve stopped the sync
+	// with the tablet right there on the same Wi-Fi.
+	it("hands over to the fallback when Chromium says the cloud's name did not resolve", async () => {
+		const cloud = cloudWith({ session: () => Promise.reject(new Error("net::ERR_NAME_NOT_RESOLVED")) });
+		const tablet: Transport = { ...opinionated(null), open: () => Promise.resolve({ api: {} as TransportSession["api"], close: async () => {} }) };
+
+		const opened = await openTransportChain({ primary: cloud, fallback: tablet });
+
+		expect(opened.transport).toBe(tablet);
+		expect(opened.failedOverFrom).toBe(cloud);
+	});
+
 	it("closes without needing the session it never opened a socket for", async () => {
 		const transport = cloudWith({ session: () => Promise.resolve("session-token") });
 
@@ -63,6 +76,16 @@ describe("CloudTransport", () => {
 });
 
 describe("explainTransportError", () => {
+	it("says the primary was not there and lets the fallback word its own failure", () => {
+		const primary = cloudWith({});
+		const failure = new BothSourcesFailedError(primary, new Error("net::ERR_NAME_NOT_RESOLVED"), opinionated("The tablet is asleep."), new Error("no answer"));
+
+		const notice = explainTransportError(primary, failure, "sync");
+
+		expect(notice).toBe(`Could not reach ${primary.label}. The tablet is asleep.`);
+		expect(notice).not.toContain("did not expect");
+	});
+
 	it("prefers the transport's own wording", () => {
 		expect(explainTransportError(opinionated("The tablet is asleep."), new Error("boom"), "sync")).toBe(
 			"The tablet is asleep.",

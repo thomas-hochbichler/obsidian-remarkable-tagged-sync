@@ -8,6 +8,7 @@ import {
 	pushToReadwise,
 	type ReadwiseData,
 	readwiseNotice,
+	readwiseDiagnosticsLine,
 	readwisePageEntry,
 	type ReadwiseUnit,
 	startOverReadwise,
@@ -869,5 +870,38 @@ describe("the Readwise page's entry", () => {
 		readwisePageEntry(OFF, PRO, null, keychain);
 
 		expect(keychain).not.toHaveBeenCalled();
+	});
+});
+
+// A line a reporter pastes into a public issue, so it says how the push stands and carries no token.
+describe("the Readwise line in the diagnostics", () => {
+	const PRO = entitlementOf({ ...NO_LICENCE, key: "TS-1", activationId: "act-1", validatedAt: new Date().toISOString() }, new Date());
+	const FREE = entitlementOf(NO_LICENCE, new Date());
+	const REFUSED = { text: "too long", location: 1 };
+	const readwiseBooks: StoredReadwiseBooks = {
+		a: book({ one: { pushed: TEXT, id: 7 }, two: { pushed: TEXT, id: 8 }, three: { want: REFUSED, rejected: REFUSED } }, { bookId: 1 }),
+		b: book({ four: { want: TEXT } }),
+	};
+	const ON = { readwise: { push: true, tokenSecret: "readwise" }, readwiseBooks };
+
+	it("says the state, the counts and readwise.io's last answer", () => {
+		expect(readwiseDiagnosticsLine(ON, PRO, "ok", () => "rw-token")).toBe("Pushing, 1 book, 2 highlights pushed, 1 document waiting, 1 refused, last answer: ok");
+		expect(readwiseDiagnosticsLine(ON, PRO, "unreachable", () => "rw-token")).toContain("last answer: unreachable");
+	});
+
+	it("says when nothing has asked readwise.io yet rather than printing null", () => {
+		expect(readwiseDiagnosticsLine(ON, PRO, null, () => "rw-token")).toContain("last answer: none since Obsidian started");
+	});
+
+	it("names what stops the push", () => {
+		expect(readwiseDiagnosticsLine(ON, PRO, null, () => null)).toMatch(/^No access token, /);
+		expect(readwiseDiagnosticsLine({ ...ON, readwise: { push: false, tokenSecret: "readwise" } }, PRO, null, () => "rw-token")).toMatch(/^Off, /);
+		expect(readwiseDiagnosticsLine(ON, FREE, null, () => "rw-token")).toMatch(/^Needs Pro, /);
+	});
+
+	it("never carries the token or its Keychain entry", () => {
+		const line = readwiseDiagnosticsLine(ON, PRO, "ok", () => "rw-token");
+		expect(line).not.toContain("rw-token");
+		expect(line).not.toContain("readwise");
 	});
 });

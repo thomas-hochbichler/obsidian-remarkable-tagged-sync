@@ -2073,6 +2073,22 @@ describe("the Readwise page", () => {
 		expect(lineOf(drawn).style.color).toBe("var(--text-error)");
 	});
 
+	it("puts both integrations into the diagnostics, without a key or a token", async () => {
+		readwiseAnswering(204);
+		const zotero = { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", writeText: true, addRender: false };
+		const { tab } = await tabWith({ ...PRO, ...ON, zotero }, keychainWith("rw-secret-token"));
+		const drawn = draw(tab);
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		await buttons(drawn, "Report a problem")[0].click();
+		await settle();
+
+		expect(copied[0]).toContain("Zotero: zotero.org, write text on, add render off, 0 documents linked");
+		expect(copied[0]).toContain("Readwise: Pushing, 0 books, 0 highlights pushed, 0 documents waiting, 0 refused, last answer: ok");
+		expect(copied[0]).not.toContain(zotero.apiKey);
+		expect(copied[0]).not.toContain("rw-secret-token");
+	});
+
 	it("saves the Keychain entry's name, never the token, and asks again", async () => {
 		const asked = readwiseAnswering(204);
 		const app = keychainWith("rw-token");
@@ -2399,15 +2415,16 @@ describe("the Tagged Sync Pro section", () => {
 		expect(keyField(drawn)).toBe(true);
 	});
 
-	// Characterisation, not endorsement. The trial button asks one question -- has a trial ever been
-	// started -- and asks it of the licence state alone, so it also stands beside "Deactivate this
-	// vault" for somebody who bought without trialling first, and beside "Buy" for a refunded buyer.
-	// Neither costs anything: the trial unlocks what a Pro licence already unlocks, and a refunded
-	// buyer has had the product either way. Recorded here so the next change to this row is a decision
-	// rather than a surprise.
-	it("offers the trial by the trial's own history, even to somebody who already has Pro", async () => {
+	// A running licence has nothing to try: the trial would unlock what it already unlocks, and the
+	// violet button stood beside "Deactivate this vault" as the row's main action. A refunded buyer keeps
+	// the offer, which costs nothing: they have had the product either way.
+	it("offers the trial unless a licence is running, whatever the trial's own history", async () => {
 		const bought = await tabWith({ licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(DAY_MS) } });
-		expect(pro(draw(bought.tab)).buttons).toEqual(["Start free trial", "Manage devices", "Deactivate this vault"]);
+		expect(pro(draw(bought.tab)).buttons).toEqual(["Manage devices", "Deactivate this vault"]);
+
+		// Not confirmed for a long while is still running: "Pro keeps working".
+		const stale = await tabWith({ licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(365 * DAY_MS) } });
+		expect(pro(draw(stale.tab)).buttons).toEqual(["Manage devices", "Deactivate this vault"]);
 
 		const refunded = await tabWith({
 			licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(DAY_MS), revokedAt: iso(DAY_MS) },

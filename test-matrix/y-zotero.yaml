@@ -992,6 +992,27 @@
       file: src/zotero-settings.test.ts
       test: "the Zotero page's entry > reads each state as the spec's table says"
 
+    - id: Y10.20
+      scenario: The Zotero line of Copy diagnostics, with Pro or a trial
+      expect: The connection, both write switches and the count of linked documents, one document in the singular
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "the Zotero line in the diagnostics > says the connection, the two switches and how many documents are linked"
+
+    - id: Y10.21
+      scenario: The same line in a free vault
+      expect: '"writing needs Pro" instead of two switches that do nothing there, and the desktop app does not count'
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "the Zotero line in the diagnostics > does not report switches a free vault cannot use"
+
+    - id: Y10.22
+      scenario: The same line with an API key stored
+      expect: The key is not in it, since the block goes into public issues
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "the Zotero line in the diagnostics > never carries the API key"
+
 - feature: Y11
   name: Where a digest entry sits on the source page
   code: src/digest-pipeline.ts

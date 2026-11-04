@@ -338,6 +338,20 @@
       file: src/transport-chain.test.ts
       test: "trying the other source > names both sources in the one notice a failover gets"
 
+    - id: S6.9
+      scenario: The primary is not there and the fallback fails too
+      expect: The error carries both transports and both raw messages, so the fallback's failure is not worded as the primary's and the last error in the diagnostics names both
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > keeps both failures when the fallback fails too"
+
+    - id: S6.10
+      scenario: The fallback throws something that is not an Error
+      expect: Its text still reaches the raw message
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > keeps a fallback's failure that is not an Error at all"
+
     - id: S6.7
       scenario: The two failure classes, asked of the SSH transport itself
       expect: Unreachable fails over; a refused key and a changed host key never do

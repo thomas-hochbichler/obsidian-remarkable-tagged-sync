@@ -343,11 +343,25 @@
       test: "the Tagged Sync Pro section > does not honour a signed trial whose date was moved by hand"
 
     - id: I2.5
-      scenario: A Pro licence is active, or was refunded, in a vault where no trial was ever started
-      expect: The trial button stands beside Deactivate and beside Buy -- the condition asks the trial's own history and nothing else. Characterised, not endorsed
+      scenario: A Pro licence is active, unconfirmed for a year, or was refunded, in a vault where no trial was ever started
+      expect: No trial button beside Deactivate while a licence runs, confirmed or not -- it would unlock what the licence already unlocks. A refunded buyer keeps the offer beside Buy
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Tagged Sync Pro section > offers the trial by the trial's own history, even to somebody who already has Pro"
+      test: "the Tagged Sync Pro section > offers the trial unless a licence is running, whatever the trial's own history"
+
+    - id: I2.19
+      scenario: Copy diagnostics is pressed with Zotero and Readwise set up
+      expect: The block has a Zotero and a Readwise line, and neither the API key nor the token
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > puts both integrations into the diagnostics, without a key or a token"
+
+    - id: I2.20
+      scenario: The row of somebody who never had Pro is drawn
+      expect: It names everything Pro brings -- cloud transcription, unlimited tag mappings, syncing without the cloud, frontmatter, Zotero write-back, Readwise -- because the Readwise page sends a free user here
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "licenceStatusText > names everything Pro brings to somebody who never had it"
 
 - feature: I3
   name: Paste and activate a key
@@ -643,6 +657,34 @@
       layer: vault
       file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > keeps what the push was answered, for the settings page's entry"
+
+    - id: W12.30
+      scenario: The Readwise line of Copy diagnostics, with a pushed book, a refused highlight and a document waiting
+      expect: The entry's state, the counts and readwise.io's last answer, in one line
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > says the state, the counts and readwise.io's last answer"
+
+    - id: W12.31
+      scenario: Nothing has asked readwise.io since Obsidian started
+      expect: '"last answer: none since Obsidian started", not a null'
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > says when nothing has asked readwise.io yet rather than printing null"
+
+    - id: W12.32
+      scenario: No token, the switch off, or no Pro
+      expect: The line starts with what stops the push
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > names what stops the push"
+
+    - id: W12.33
+      scenario: A token sits in the Keychain under its entry name
+      expect: Neither the token nor the entry's name is in the line, since the block goes into public issues
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise line in the diagnostics > never carries the token or its Keychain entry"
 
 - feature: SR1
   name: The settings tab on the declarative settings API (settings-redesign ticket 10)

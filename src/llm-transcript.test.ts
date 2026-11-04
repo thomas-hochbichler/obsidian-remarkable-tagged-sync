@@ -370,6 +370,9 @@ describe("isUnreachable", () => {
 			"net::ERR_NAME_NOT_RESOLVED",
 			"net::ERR_ADDRESS_UNREACHABLE",
 			"net::ERR_INTERNET_DISCONNECTED",
+			"net::ERR_TIMED_OUT",
+			"net::ERR_DNS_TIMED_OUT",
+			"net::ERR_PROXY_CONNECTION_FAILED",
 		]) {
 			expect(isUnreachable(new Error(message)), message).toBe(true);
 		}

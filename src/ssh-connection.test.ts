@@ -284,7 +284,10 @@ describe("which failures read as nobody answered", () => {
 			"connect ETIMEDOUT 192.168.1.9:22",
 			"connect ECONNREFUSED 192.168.1.9:22",
 			"connect EHOSTUNREACH 192.168.1.9:22",
+			// What macOS answers at once when the tablet is gone from the Wi-Fi (smoke test of 1.11.0).
+			"connect EHOSTDOWN 192.168.1.9:22",
 			"connect ENETUNREACH 192.168.1.9:22",
+			"connect ENETDOWN 192.168.1.9:22",
 			"read ECONNRESET",
 			"getaddrinfo ENOTFOUND remarkable.local",
 		]) {

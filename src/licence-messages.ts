@@ -85,7 +85,7 @@ export function licenceStatusText(entitlement: Entitlement, state: LicenceState)
 				case "never-bought":
 					return {
 						heading: "Not active",
-						body: `${PRO_PRICE}, once. Cloud transcription and unlimited tag mappings.`,
+						body: `${PRO_PRICE}, once. Cloud transcription, unlimited tag mappings, syncing without the cloud, frontmatter properties, Zotero write-back and pushing to Readwise.`,
 					};
 			}
 	}

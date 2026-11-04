@@ -251,6 +251,25 @@ export function readwiseConnectionLine(connection: ReadwiseConnection, books: St
 	return { text: line.text + pending + refused, tone: line.tone };
 }
 
+/** The Readwise line in *Copy diagnostics*. Goes into public issues, so it holds counts and no token, title or highlight. */
+export function readwiseDiagnosticsLine(
+	data: { readwise: ReadwiseSettings; readwiseBooks: StoredReadwiseBooks; readwiseAccountClash?: true },
+	entitlement: Entitlement,
+	lastCheck: ReadwiseLastCheck,
+	token: () => string | null,
+): string {
+	const { value } = readwisePageEntry(data, entitlement, lastCheck, token);
+	const counts = readwiseCounts(data.readwiseBooks);
+	return [
+		readwiseProAllowed(entitlement) ? value : "Needs Pro",
+		plural(counts.books, "book", "books"),
+		`${plural(counts.highlights, "highlight", "highlights")} pushed`,
+		`${plural(pendingDocuments(data.readwiseBooks).length, "document", "documents")} waiting`,
+		`${counts.setAside} refused`,
+		`last answer: ${lastCheck ?? "none since Obsidian started"}`,
+	].join(", ");
+}
+
 /** Is there anything to send: a change, or a book still owed the user's names (spec §4.3 step 4b)? */
 function hasWork(books: StoredReadwiseBooks): boolean {
 	return liveBooks(books).some(([, book]) => pendingItems(book).length > 0 || (book.shown?.owed === true && book.bookId !== undefined));

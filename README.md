@@ -1140,7 +1140,8 @@ Three behaviours show up in Obsidian's automated plugin review, so they are spel
 
 - **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
   version, Obsidian version, platform, whether Apple Vision is available, the selected transcription
-  backend, a few transcription and text-layer counters, the number of mapped tags, the last sync time and the last
+  backend, a few transcription and text-layer counters, the number of mapped tags, how Zotero and Readwise are
+  set up and how much they hold (counts only, never a key, a token or a title), the last sync time and the last
   error to the clipboard, so you can paste them into a bug report. The last error can name a
   notebook or document — look before you paste it anywhere public. The plugin **never reads** your
   clipboard, and nothing is sent anywhere — you choose where to paste it.
