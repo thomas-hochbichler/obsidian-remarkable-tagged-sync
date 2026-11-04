@@ -365,6 +365,24 @@ describe("two complete models, the smaller one picked", () => {
 		expect(page.defaultSelected).toBe(0);
 		expect(preferred(page.blob)).toBeUndefined();
 	});
+
+	// A model this computer has no memory for transcribes nothing, so keeping the backend for it would
+	// leave every sync writing notes without a transcript.
+	it("deletes the whole setup when the other model cannot run on this computer", async () => {
+		const memory = machine.totalMemoryBytes;
+		machine.totalMemoryBytes = SMALL.floorGb.darwin * 1024 ** 3;
+		try {
+			const page = render({ preferredModelDir: SMALL.dir });
+
+			await page.button("Delete the model")?.click();
+			await settle();
+
+			expect(machine.removed).toEqual([]);
+			expect(fetcher.removedModel).not.toBeNull();
+		} finally {
+			machine.totalMemoryBytes = memory;
+		}
+	});
 });
 
 describe("the speed figure, across a change of model", () => {

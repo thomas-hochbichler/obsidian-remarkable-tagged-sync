@@ -109,7 +109,7 @@ function nestedNote({ notes }: DigestHighlight): { note?: string; noteUnread?: t
 /** Where a unit's links lead: the vault, and the unit's render by its file name. */
 export interface LinkTarget {
 	readonly vault: string;
-	readonly pdf: string;
+	readonly pdfName: string;
 }
 
 /**
@@ -118,8 +118,8 @@ export interface LinkTarget {
  * The render, not the note: its name holds only ids, so a `#` in a document's name and a renamed note
  * cannot break the link. `highlight` is for Readwise, which needs one link per highlight on a page.
  */
-export function highlightUrl({ vault, pdf }: LinkTarget, docId: string, key: string, embedPage: number): string {
-	return `obsidian://open?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(`${pdf}#page=${embedPage}`)}&highlight=${encodeURIComponent(`${docId}/${key}`)}`;
+export function highlightUrl({ vault, pdfName }: LinkTarget, docId: string, key: string, embedPage: number): string {
+	return `obsidian://open?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(`${pdfName}#page=${embedPage}`)}&highlight=${encodeURIComponent(`${docId}/${key}`)}`;
 }
 
 /** The key of a record 1.11.0-beta.1 pushed, which stored none: a new one would make Readwise file the highlight twice. */

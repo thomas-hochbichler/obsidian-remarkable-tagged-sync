@@ -794,6 +794,60 @@
       layer: vault
       file: src/sync-engine.test.ts
       test: "a digest read again with nothing changed on the tablet > does not read a sibling again on every sync because a hand-edited note keeps the document open"
+    - id: C29.17
+      scenario: The digest build throws on a note with no retry waiting
+      expect: The row stays due, so the next sync tries again and writes it
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > tries again on the next sync after the digest build threw, when no retry was waiting"
+    - id: C29.18
+      scenario: A note is kept because the reading failed
+      expect: The run counts it as failed, so the sync still says so
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > reports a note kept for a reading that came back failed"
+    - id: C29.19
+      scenario: A note is kept because the backend was unavailable
+      expect: The run counts it as unavailable, so the sync still says so
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > reports a note kept for a reading that came back unavailable"
+    - id: C29.11
+      scenario: A note due for its Readwise record is kept because the reading failed
+      expect: What the digest read is still recorded, named from the tablet and the EPUB, not Zotero; a refusal would otherwise keep the document out of Readwise for good
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > still records a kept note for Readwise, named without the Zotero pass"
+    - id: C29.12
+      scenario: A note is kept because the digest build threw
+      expect: Nothing is recorded, because the build said nothing about the tablet
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > records nothing for a note kept because the digest build threw"
+    - id: C29.13
+      scenario: The reading fails on a note whose tag now goes to another folder
+      expect: The note is written, because it belongs somewhere else now
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > writes the note when its tag now goes to another folder"
+    - id: C29.14
+      scenario: The reading fails on a note whose tag was renamed
+      expect: The note is written under the new tag
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > writes the note when its tag was renamed"
+    - id: C29.15
+      scenario: A document-tag unit fails to render
+      expect: The row keeps its old entry hash, so the next sync tries again
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a unit that failed to render > under a document tag is tried again on the next sync"
+    - id: C29.16
+      scenario: A page-tag unit fails to render
+      expect: The row keeps its old entry hash, so the next sync tries again
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a unit that failed to render > under a page tag is tried again on the next sync"
 
 - feature: C28
   name: The switch for margin notes costs nothing until a sync sees it moved

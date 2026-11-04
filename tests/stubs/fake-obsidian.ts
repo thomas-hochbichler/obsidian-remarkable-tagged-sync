@@ -805,19 +805,12 @@ export class FakeApp {
 		 * `js-yaml` rather than Obsidian.
 		 */
 		frontmatter: new Map<string, Record<string, unknown>>(),
-		/** The `^block` ids of each note, by path. Not an Obsidian member, written by a test like `frontmatter`. */
-		blocks: new Map<string, string[]>(),
 		/** The plugin resolves an embed to a file. Exact path first, then the vault's own lookup. */
 		getFirstLinkpathDest: (linkpath: string, _sourcePath: string): TFile | null =>
 			this.vault.getFileByPath(linkpath) ?? this.vault.getFileByPath(normalizePath(linkpath)),
-		getFileCache: (file: TFile): { frontmatter?: Record<string, unknown>; blocks?: Record<string, unknown> } | null => {
+		getFileCache: (file: TFile): { frontmatter?: Record<string, unknown> } | null => {
 			const frontmatter = this.metadataCache.frontmatter.get(file.path);
-			const blocks = this.metadataCache.blocks.get(file.path);
-			if (frontmatter === undefined && blocks === undefined) return null;
-			return {
-				...(frontmatter === undefined ? {} : { frontmatter }),
-				...(blocks === undefined ? {} : { blocks: Object.fromEntries(blocks.map((id) => [id, { id }])) }),
-			};
+			return frontmatter === undefined ? null : { frontmatter };
 		},
 		/** Obsidian answers the shortest unambiguous form; the basename is that wherever it is unique. */
 		fileToLinktext: (file: TFile, _sourcePath: string): string => file.basename,
@@ -1339,7 +1332,6 @@ export class Plugin {
 	readonly eventRefs: EventRef[] = [];
 	readonly domEvents: { el: FakeEl; type: string }[] = [];
 	readonly codeBlockProcessors = new Map<string, (source: string, el: FakeEl, ctx: unknown) => unknown>();
-	readonly protocolHandlers = new Map<string, (params: Record<string, string>) => unknown>();
 	readonly statusBarItems: FakeEl[] = [];
 	readonly cleanups: (() => void)[] = [];
 	/** What `loadData()` returns. A test sets it to the `data.json` it wants to arrive with. */
@@ -1392,9 +1384,6 @@ export class Plugin {
 		handler: (source: string, el: FakeEl, ctx: unknown) => unknown,
 	): void {
 		this.codeBlockProcessors.set(language, handler);
-	}
-	registerObsidianProtocolHandler(action: string, handler: (params: Record<string, string>) => unknown): void {
-		this.protocolHandlers.set(action, handler);
 	}
 	onload(): void | Promise<void> {}
 	onunload(): void {}

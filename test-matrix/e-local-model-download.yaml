@@ -763,6 +763,13 @@
       file: src/local-register.test.ts
       test: "two complete models, the smaller one picked > deletes only the one on the card, and goes back to the other"
 
+    - id: E39.32
+      scenario: Delete the model with another complete model this computer has too little memory for
+      expect: The whole setup goes and the backend moves on, because that model would transcribe nothing
+      layer: vault
+      file: src/local-register.test.ts
+      test: "two complete models, the smaller one picked > deletes the whole setup when the other model cannot run on this computer"
+
     - id: E39.22
       scenario: The window of page times was measured on another model
       expect: The card shows the derived figure, not the other model's as this machine's, and the window stays for going back to that model

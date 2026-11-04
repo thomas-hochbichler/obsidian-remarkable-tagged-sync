@@ -95,8 +95,8 @@ export function createReadwiseRecorder(host: RecorderHost): ReadwiseRecorder {
 	return {
 		async record({ docId, embedPath, pages, scope, pageOrder, marginNotes, category, sources }) {
 			const identity = host.books()[docId] === undefined ? bookIdentity(await sources()) : NAME_NOT_READ;
-			const pdf = embedPath.slice(embedPath.lastIndexOf("/") + 1);
-			const items = readwiseHighlights(pages, docId, pageOrder, { vault: host.vaultName(), pdf });
+			const pdfName = embedPath.slice(embedPath.lastIndexOf("/") + 1);
+			const items = readwiseHighlights(pages, docId, pageOrder, { vault: host.vaultName(), pdfName });
 			host.setBooks(recordUnit(host.books(), docId, { items, scope, identity, category, marginNotes }));
 		},
 	};

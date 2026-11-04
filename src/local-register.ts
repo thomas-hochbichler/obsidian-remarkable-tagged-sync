@@ -352,10 +352,12 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 							rerender();
 							break;
 						case "delete": {
-							// Another complete model stays: only this one goes. `removeLocalModel` would take the
-							// engine that one needs, and the backend would fall back past it. Covers a failed
-							// download of a newer model too.
-							if (readModelDirectories(paths).some((entry) => entry.complete && entry.name !== shown.generation.dir)) {
+							// Another complete model this computer can run stays: only this one goes. `removeLocalModel`
+							// would take the engine that one needs, and the backend would fall back past it. Covers a
+							// failed download of a newer model too. One it cannot run transcribes nothing, so it does not count.
+							const present = readModelDirectories(paths);
+							const usable = runnableGenerations(context).filter((each) => each.dir !== shown.generation.dir);
+							if (usable.some((each) => present.some((entry) => entry.complete && entry.name === each.dir))) {
 								if (readLocalModelSettings(ctx.settings).preferredModelDir === shown.generation.dir) {
 									setPreferredModelDir(ctx.settings, null);
 									await ctx.save();

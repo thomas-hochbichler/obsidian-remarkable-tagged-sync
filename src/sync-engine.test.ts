@@ -3883,6 +3883,36 @@ describe("the text layer (searchable PDF)", () => {
 	});
 });
 
+// Since a current note stays shut when its document opens for another one, nothing else would ever repair it.
+describe("a unit that failed to render", () => {
+	const document = async (rootHash: string, hash: string, tagged: { tags?: { name: string; timestamp: number }[]; pageTags?: { name: string; timestamp: number; pageId: string }[] }) =>
+		fakeApi({
+			rootHash,
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Book", hash, tags: tagged.tags ?? [] })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]), pageTags: tagged.pageTags ?? [] }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+			pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+		});
+
+	it.each([
+		["a document tag", { tags: [{ name: "sync", timestamp: 0 }] }, notebookSyncKey("doc-1", "sync")],
+		["a page tag", { pageTags: [{ name: "sync", timestamp: 0, pageId: "p1" }] }, pageSyncKey("doc-1", "p1", "sync")],
+	])("under %s is tried again on the next sync", async (_, tagged, key) => {
+		const deps = baseDeps(await document("root-1", "hash-1", tagged), { sync: "Target" });
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const failing = await document("root-2", "hash-2", tagged);
+		failing.raw.getHash.mockRejectedValue(new Error("page fetch failed"));
+
+		const broken = await runSync({ ...deps, api: failing }, index);
+		expect(broken.notesWritten).toBe(0);
+		expect(broken.index.rows[key].entryHash).toBe("hash-1");
+
+		const healed = await runSync({ ...deps, api: await document("root-3", "hash-2", tagged) }, broken.index);
+		expect(healed.notesWritten).toBe(1);
+		expect(healed.index.rows[key].entryHash).toBe("hash-2");
+	});
+});
+
 describe("a digest read again with nothing changed on the tablet", () => {
 	const KEY = notebookSyncKey("doc-1", "sync");
 	const OTHER_KEY = notebookSyncKey("doc-1", "other");
@@ -3958,6 +3988,79 @@ describe("a digest read again with nothing changed on the tablet", () => {
 
 		expect(await deps.noteStore.read(path)).toBe(before);
 		expect(again.notesWritten).toBe(0);
+	});
+
+	// The build said nothing about the note, so what made it due still stands.
+	it("tries again on the next sync after the digest build threw, when no retry was waiting", async () => {
+		const { deps, index } = await synced();
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ) }, invalidateRows(index, [KEY]));
+		expect(again.index.rows[KEY].ocrRetry).toBeUndefined();
+
+		const next = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ) }, again.index);
+
+		expect(next.notesWritten).toBe(1);
+	});
+
+	it.each([
+		["failed", "failedOcrUnits"],
+		["unavailable", "unavailableOcrUnits"],
+	] as const)("reports a note kept for a reading that came back %s", async (status, count) => {
+		const { deps, index } = await synced();
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend({ ...DEAD, status }) }, invalidateRows(index, [KEY]));
+
+		expect(again[count]).toBe(1);
+	});
+
+	// A backfill, or *Push to Readwise again*, makes the note due for its record. A refusal is not tried
+	// again under the same backend, so the highlights would otherwise stay out of Readwise for good.
+	it("still records a kept note for Readwise, named without the Zotero pass", async () => {
+		const { deps, index } = await synced();
+		const units: ReadwiseUnit[] = [];
+		const readwise: ReadwiseRecorder = {
+			record: async (unit) => {
+				units.push(unit);
+			},
+		};
+
+		await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD), readwise }, invalidateRows(index, [KEY]));
+
+		expect(units).toHaveLength(1);
+		expect(units[0]).toMatchObject({ docId: "doc-1", scope: "document" });
+		expect(units[0].embedPath).toMatch(/\/doc-1\.pdf$/);
+		expect(await units[0].sources()).toEqual({ visibleName: "Book" });
+	});
+
+	it("records nothing for a note kept because the digest build threw", async () => {
+		const { deps, index } = await synced();
+		const record = vi.fn(async () => {});
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
+
+		await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ), readwise: { record } }, invalidateRows(index, [KEY]));
+
+		expect(record).not.toHaveBeenCalled();
+	});
+
+	// The note belongs somewhere else now, so keeping it would leave it in the wrong place.
+	it("writes the note when its tag now goes to another folder", async () => {
+		const { deps, index } = await synced();
+		const moved = baseDeps(await book(), { sync: "Elsewhere" });
+
+		const again = await runSync({ ...moved, noteStore: deps.noteStore, attachmentStore: deps.attachmentStore, ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		expect(again.notesWritten).toBe(1);
+		expect(again.index.rows[KEY].notePath).toMatch(/^Elsewhere\//);
+	});
+
+	it("writes the note when its tag was renamed", async () => {
+		const { deps, index } = await synced();
+		const renamed = baseDeps(await book("hash-1", [{ name: "other", timestamp: 0 }]), { sync: "Target", other: "Target" });
+
+		const again = await runSync({ ...renamed, noteStore: deps.noteStore, attachmentStore: deps.attachmentStore, ocrBackend: fakeOcrBackend(DEAD) }, index);
+
+		expect(again.notesWritten).toBe(1);
+		expect(again.index.rows[OTHER_KEY]).toBeDefined();
 	});
 
 	it("brings back a note deleted from the vault, whatever the reading", async () => {

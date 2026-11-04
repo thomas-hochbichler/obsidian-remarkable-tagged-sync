@@ -4,7 +4,6 @@ import { bookIdOf, readwiseBook, type StoredReadwiseBooks } from "./readwise-sta
 /** What the commands need of a sync index row. */
 interface NoteRow {
 	readonly docId: string;
-	readonly pageId: string | null;
 	readonly notePath: string;
 	readonly status: string;
 }

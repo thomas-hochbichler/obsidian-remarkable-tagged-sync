@@ -233,7 +233,6 @@ describe("pushToReadwise", () => {
 		]);
 	});
 
-	// Ticket 14 #4: never blank, never a placeholder. Readwise answers `null` for it.
 	// Ticket 27: Readwise knows a highlight by this link, so the same one goes out however often it changes.
 	it("sends a record's frozen link, and the old link for a record of the beta", async () => {
 		const readwise = fakeReadwise();
@@ -251,6 +250,7 @@ describe("pushToReadwise", () => {
 		]);
 	});
 
+	// Ticket 14 #4: never blank, never a placeholder. Readwise answers `null` for it.
 	it("omits the author of a book nobody named, sends the book's category, and still learns the book's id", async () => {
 		const readwise = fakeReadwise();
 		const sent: ReadwiseItem[] = [];

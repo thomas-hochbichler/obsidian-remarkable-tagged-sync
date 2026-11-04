@@ -1318,6 +1318,24 @@ function layerTally(scenes: RmPage[], texts: { embedPage: number; text: string }
 	};
 }
 
+/** Hands a unit to the Readwise recorder, with what may name its book. */
+async function recordForReadwise(
+	recorder: ReadwiseRecorder,
+	{ epub, ...unit }: NonNullable<UnitParams["readwise"]>,
+	{ docId, embedPath, visibleName, paper }: { docId: string; embedPath: string; visibleName: string; paper?: ZoteroNoteParts["paper"] },
+): Promise<void> {
+	await recorder.record({
+		...unit,
+		docId,
+		embedPath,
+		sources: async () => {
+			// A book that cannot be fetched is still recorded, under the name the tablet gives it.
+			const book = await epub?.().catch(() => null);
+			return { ...(paper ? { zotero: paper } : {}), ...(book ? { epub: book } : {}), visibleName };
+		},
+	});
+}
+
 /** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero" | "readwise"> & { attachmentsFolder: string; newNoteId: () => string },
@@ -1412,18 +1430,7 @@ async function writeUnit(
 	// After the Zotero pass, which is what names the paper the book may be named after (spec §11 P21).
 	// Nothing here can fail the write: the recorder is pure, and the book's fetch is caught below.
 	if (params.readwise !== undefined && deps.readwise !== undefined) {
-		const { epub, ...unit } = params.readwise;
-		const paper = zotero?.paper;
-		await deps.readwise.record({
-			...unit,
-			docId: params.docId,
-			embedPath,
-			sources: async () => {
-				// A book that cannot be fetched is still recorded, under the name the tablet gives it.
-				const book = await epub?.().catch(() => null);
-				return { ...(paper ? { zotero: paper } : {}), ...(book ? { epub: book } : {}), visibleName: params.source };
-			},
-		});
+		await recordForReadwise(deps.readwise, params.readwise, { docId: params.docId, embedPath, visibleName: params.source, paper: zotero?.paper });
 	}
 
 	// Carried from the row this write replaces -- which is the rename's source row when a mapped tag
@@ -2522,18 +2529,30 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		 * note is meant to say what it says, and a changed tablet leaves the old note describing a page
 		 * that is gone.
 		 */
-		const digestWouldLose = async (row: SyncIndexRow, rename: TagRename | null, digest: Awaited<ReturnType<typeof buildUnitDigest>> | { failed?: undefined; ocr: null; markdown: string }): Promise<boolean> => {
+		type UnitDigest = Awaited<ReturnType<typeof buildUnitDigest>>;
+		const digestWouldLose = async (row: SyncIndexRow, rename: TagRename | null, digest: UnitDigest): Promise<boolean> => {
 			if (rename !== null || row.entryHash !== entry.hash || isRetargeted(row, tagRouter)) return false;
 			if (digest.failed !== true && digest.ocr !== "failed" && digest.ocr !== "unavailable") return false;
 			const block = extractManagedBlock((await deps.noteStore.read(row.notePath)) ?? "");
 			if (block?.includes("\n## Digest\n") !== true) return false;
 			return digest.failed === true || digest.markdown.split(NOT_TRANSCRIBED).length > block.split(NOT_TRANSCRIBED).length;
 		};
-		/** The row of a note kept that way: current, so it is not read again until its retry says so. */
-		const keepNote = (row: SyncIndexRow, ocrRetry: SyncIndexRow["ocrRetry"]): void => {
-			rows[row.syncKey] = withOcrRetry({ ...row, renderVersion: RENDER_VERSION }, ocrRetry);
+		/**
+		 * A note kept that way. A build that threw said nothing, so the row stays as it is, and due. A failed
+		 * reading makes it current, so a refusal is not billed again until its retry says so; what the
+		 * digest did read still goes to Readwise, or a document that is due for its first record would stay
+		 * out of it. Its book is named without the Zotero pass, which only runs for a note that is written.
+		 */
+		const keepNote = async (row: SyncIndexRow, digest: UnitDigest, pageId: string | null): Promise<void> => {
 			untouchedKeys.add(row.syncKey);
 			bar.finish();
+			if (digest.failed) return;
+			rows[row.syncKey] = withOcrRetry({ ...row, renderVersion: RENDER_VERSION }, digest.ocrRetry);
+			if (digest.ocr === "unavailable") unavailableOcrUnits++;
+			else failedOcrUnits++;
+			if (deps.readwise !== undefined) {
+				await recordForReadwise(deps.readwise, readwiseUnit(pageId, digest)!, { docId: entry.id, embedPath: attachmentPath(attachmentsFolder, entry.id, pageId), visibleName: entry.visibleName });
+			}
 		};
 
 		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash, rerenderDue);
@@ -2591,6 +2610,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
 				skipErrors.push(`failed to render "${entry.visibleName}" for tag "${tag}": ${errorText(error)}`);
+				// Keeps its old entry hash, which is what reopens the document on the next run.
+				untouchedKeys.add(notebookSyncKey(entry.id, tag));
 				skippedDocIds.add(entry.id);
 				// The bar counted these pages before anything went wrong, and the failure is already in
 				// the run's own report -- so they count as done rather than stranding the bar short.
@@ -2600,9 +2621,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `"${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			const digest: UnitDigest = digestPages ? await buildUnitDigest(null, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
 			if (unit.writtenRow && (await digestWouldLose(unit.writtenRow, rename, digest))) {
-				keepNote(unit.writtenRow, digest.ocrRetry);
+				await keepNote(unit.writtenRow, digest, null);
 				continue;
 			}
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
@@ -2746,6 +2767,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${tag}", skipping`, error);
 				skipErrors.push(`failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${tag}": ${errorText(error)}`);
+				untouchedKeys.add(pageSyncKey(entry.id, unit.pageId, tag)); // see the notebook-tag branch
 				skippedDocIds.add(entry.id);
 				bar.finish(); // see the notebook-tag branch
 				continue;
@@ -2753,9 +2775,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			const digest: UnitDigest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
 			if (unit.writtenRow && (await digestWouldLose(unit.writtenRow, rename, digest))) {
-				keepNote(unit.writtenRow, digest.ocrRetry);
+				await keepNote(unit.writtenRow, digest, unit.pageId);
 				continue;
 			}
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);

@@ -152,14 +152,14 @@ function sameText(a: ReadwiseText | null | undefined, b: ReadwiseText | null | u
 	return a != null && b != null && a.text === b.text && a.note === b.note && a.location === b.location;
 }
 
-/** The record holding `text` from now on (spec §4.2); `url` is a new record's link. */
-function wanting(record: ReadwiseHighlight | undefined, text: ReadwiseText, url: string): ReadwiseHighlight {
+/** The record holding `text` from now on (spec §4.2). */
+function wanting(record: ReadwiseHighlight | undefined, text: ReadwiseText, newRecordUrl: string): ReadwiseHighlight {
 	// The tablet is back to what Readwise holds: whatever was pending is void, a delete included.
 	if (record?.pushed && sameText(record.pushed, text)) {
 		const { want: _void, rejected: _cleared, ...rest } = record;
 		return rest;
 	}
-	return { ...(record ?? { url }), want: text };
+	return { ...(record ?? { url: newRecordUrl }), want: text };
 }
 
 /** A record's `highlight_url`: what Readwise knows it by. */

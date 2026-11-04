@@ -35,6 +35,8 @@ Obsidian to get this release.
 
 ### Fixed
 
+- **A note that failed to render is tried again.** It used to stay as it was until the document changed
+  on the tablet again, although the sync had reported the failure.
 - ***Re-transcribe this note* now reads a PDF's margin notes again.** It used to refuse, and *Re-transcribe
   all synced notes* did not reach them either, so a margin note misread by one backend stayed misread
   after switching to a better one. Both now read them again through a sync; on a paid backend *Re-transcribe

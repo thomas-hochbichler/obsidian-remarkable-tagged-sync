@@ -4,7 +4,7 @@ import { readwiseHighlights, type ReadableEntry, type ReadwiseEntry } from "./re
 
 const DOC = "0f1e2d3c-doc";
 const PAGE = "6a7b8c9d-page";
-const TARGET = { vault: "My Vault", pdf: `${DOC}.pdf` };
+const TARGET = { vault: "My Vault", pdfName: `${DOC}.pdf` };
 
 /** The link as Obsidian and Readwise read it, written out rather than borrowed from the code it checks. */
 const link = (key: string, embedPage = 12) => `obsidian://open?vault=My%20Vault&file=${DOC}.pdf%23page%3D${embedPage}&highlight=${DOC}%2F${key.replace(":", "%3A")}`;
@@ -61,13 +61,13 @@ describe("readwiseHighlights", () => {
 			});
 
 			it("opens a page-tag unit's own render, whose one page is page 1", () => {
-				const url = urlOf([page({ embedPage: 1, highlights: [highlight()] })], { vault: "My Vault", pdf: `${DOC}-${PAGE}.pdf` });
+				const url = urlOf([page({ embedPage: 1, highlights: [highlight()] })], { vault: "My Vault", pdfName: `${DOC}-${PAGE}.pdf` });
 
 				expect(url).toBe(`obsidian://open?vault=My%20Vault&file=${DOC}-${PAGE}.pdf%23page%3D1&highlight=${DOC}%2F${PAGE}%3A1a2b`);
 			});
 
 			it("carries a vault name of any characters in one piece", () => {
-				const url = urlOf([page({ highlights: [highlight()] })], { vault: "Ü & #1?", pdf: `${DOC}.pdf` });
+				const url = urlOf([page({ highlights: [highlight()] })], { vault: "Ü & #1?", pdfName: `${DOC}.pdf` });
 
 				expect(new globalThis.URL(url).searchParams.get("vault")).toBe("Ü & #1?");
 			});
