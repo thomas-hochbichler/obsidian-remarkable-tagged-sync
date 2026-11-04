@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-11-04
+
 ### Fixed
 
 - **Blue, orange and grey highlights on a reMarkable Paper Pro no longer black out the text.** A
