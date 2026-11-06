@@ -12,6 +12,11 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **The README's setup steps name the refresh icon.** They told you to click *Scan*, but under *Tag
+  routing* the scan is now a refresh icon with the tooltip *Scan for tags*.
+
 ## [1.11.0] - 2026-11-04
 
 Needs Obsidian 1.13.4 or newer. On an older Obsidian the community store keeps you on 1.10.x; update
