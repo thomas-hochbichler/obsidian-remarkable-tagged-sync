@@ -763,31 +763,63 @@ function passages(hits: LineHit[]): LineHit[][] {
 }
 
 /**
+ * How many lines past the marked ones a quote looks for its sentence's start or end, each way. A list
+ * or a table has no sentence ends to find, and with no limit its quote would run to the next gap.
+ */
+const MAX_SENTENCE_REACH = 8;
+
+/**
  * One passage's quote: the sentence around the lines it covers, plus the covered run verbatim. The
- * neighbouring lines come along because a sentence rarely starts and ends on the highlighted line --
- * but only across a normal line break, never across a heading or a paragraph break.
+ * neighbouring lines come along because a sentence rarely starts and ends on the highlighted line, and
+ * more of them while the sentence still runs off the edge -- but only across a normal line break, never
+ * across a heading or a paragraph break. A side that finds no boundary within reach is not a sentence,
+ * so it keeps to the line next to the mark.
  */
 function quoteForPassage(page: PdfPageText, group: LineHit[], spacing: number | null, highlightText?: string): { sentence: string; marked: string } {
 	const first = group[0];
 	const last = group[group.length - 1];
-	const above = page.lines[first.index - 1];
-	const below = page.lines[last.index + 1];
-	const from = above && !separated(above, page.lines[first.index], spacing) ? first.index - 1 : first.index;
-	const to = below && !separated(page.lines[last.index], below, spacing) ? last.index + 1 : last.index;
-	const { text, spans } = joinLines(page.lines.slice(from, to + 1).map((line) => line.text));
+	const lines = page.lines;
+	const joinsAbove = (index: number) => index > 0 && !separated(lines[index - 1], lines[index], spacing);
+	const joinsBelow = (index: number) => index < lines.length - 1 && !separated(lines[index], lines[index + 1], spacing);
 
-	const firstSpan = spans[first.index - from];
-	const lastSpan = spans[last.index - from];
-	const estimateStart = Math.min(firstSpan.start + first.range.start, firstSpan.end);
-	const estimateEnd = Math.max(Math.min(lastSpan.start + last.range.end, lastSpan.end), estimateStart);
-	// Widened again, now in the *joined* text. `markedRange` already widened per line, but a word the
-	// line break split is only whole once `joinLines` has dropped the hyphen -- and a mark under the
-	// second half then starts inside it. The device's own recorded text is left alone: it says what was
-	// marked, and there is no instance of it starting mid-word to fit a rule to.
-	const mark =
-		(highlightText ? locateHighlight(text, highlightText, estimateStart) : null) ?? expandToWords(text, estimateStart, estimateEnd);
-	const bounds = sentenceAround(text, mark.start, mark.end);
+	const read = (from: number, to: number) => {
+		const { text, spans } = joinLines(lines.slice(from, to + 1).map((line) => line.text));
+		const firstSpan = spans[first.index - from];
+		const lastSpan = spans[last.index - from];
+		const estimateStart = Math.min(firstSpan.start + first.range.start, firstSpan.end);
+		const estimateEnd = Math.max(Math.min(lastSpan.start + last.range.end, lastSpan.end), estimateStart);
+		// Widened again, now in the *joined* text. `markedRange` already widened per line, but a word the
+		// line break split is only whole once `joinLines` has dropped the hyphen -- and a mark under the
+		// second half then starts inside it. The device's own recorded text is left alone: it says what was
+		// marked, and there is no instance of it starting mid-word to fit a rule to.
+		const mark =
+			(highlightText ? locateHighlight(text, highlightText, estimateStart) : null) ?? expandToWords(text, estimateStart, estimateEnd);
+		return { text, mark, bounds: sentenceAround(text, mark.start, mark.end) };
+	};
 
+	const nearFrom = joinsAbove(first.index) ? first.index - 1 : first.index;
+	const nearTo = joinsBelow(last.index) ? last.index + 1 : last.index;
+
+	let from = nearFrom;
+	while (joinsAbove(from) && read(from, nearTo).bounds.start === 0) {
+		if (first.index - from === MAX_SENTENCE_REACH) {
+			from = nearFrom;
+			break;
+		}
+		from--;
+	}
+	let to = nearTo;
+	while (joinsBelow(to)) {
+		const { text, bounds } = read(from, to);
+		if (bounds.end < text.length) break;
+		if (to - last.index === MAX_SENTENCE_REACH) {
+			to = nearTo;
+			break;
+		}
+		to++;
+	}
+
+	const { text, mark, bounds } = read(from, to);
 	return { sentence: text.slice(bounds.start, bounds.end).trim(), marked: text.slice(mark.start, mark.end).trim() };
 }
 
