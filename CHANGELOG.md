@@ -16,6 +16,9 @@ workflow publishes the section as the GitHub release body. See
 
 - **The README's setup steps name the refresh icon.** They told you to click *Scan*, but under *Tag
   routing* the scan is now a refresh icon with the tooltip *Scan for tags*.
+- **The README's setup mentions three things a new user gets stuck on.** Turning on community
+  plugins, creating the vault folder before choosing it, and the second switch automatic sync needs
+  with a local model, a local server or a cloud backend.
 
 ## [1.11.0] - 2026-11-04
 
