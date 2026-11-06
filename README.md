@@ -163,13 +163,15 @@ You need Obsidian **1.13.4 or later** on **desktop** (Windows, macOS, or Linux �
 is unsupported), and a reMarkable account with cloud sync switched on — unless you sync
 [straight from the tablet](#syncing-without-the-cloud), which needs no account at all.
 
-1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Tagged Sync for
-   reMarkable**, and click **Install**, then **Enable**.
+1. In Obsidian, open **Settings → Community plugins**. If Obsidian asks, click **Turn on community
+   plugins**. Then click **Browse**, search for **Tagged Sync for reMarkable**, and click
+   **Install**, then **Enable**.
 2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
    `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
    **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
 3. Under **Tag routing**, click the refresh icon (*Scan for tags*) to find the tags on your
-   reMarkable notebooks, pages and folders, then click the tag you want to sync and choose a vault folder for it. Only a
+   reMarkable notebooks, pages and folders, then click the tag you want to sync and choose a vault
+   folder for it. The folder must already exist, so create it first if you want a new one. Only a
    mapped tag is synced — an unmapped tag is simply not selected, not lost.
 4. Click **Sync** beside *Sync now*.
 
@@ -192,7 +194,8 @@ and the next sync carries on from where it left off.
 
 Off by default. Under **Automatic sync** you can turn on a sync when Obsidian launches, plus an
 interval backstop while it stays open. A manual sync pushes the next automatic one out rather
-than triggering a redundant run.
+than triggering a redundant run. With a local model, a local server or a cloud backend, also turn
+on **Allow automatic sync with this backend**, or automatic sync does nothing.
 
 ### Re-transcribing
 
