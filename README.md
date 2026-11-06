@@ -168,8 +168,8 @@ is unsupported), and a reMarkable account with cloud sync switched on — unless
 2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
    `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
    **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
-3. Under **Tag routing**, click **Scan** to find the tags on your reMarkable notebooks, pages and
-   folders, then click the tag you want to sync and choose a vault folder for it. Only a
+3. Under **Tag routing**, click the refresh icon (*Scan for tags*) to find the tags on your
+   reMarkable notebooks, pages and folders, then click the tag you want to sync and choose a vault folder for it. Only a
    mapped tag is synced — an unmapped tag is simply not selected, not lost.
 4. Click **Sync** beside *Sync now*.
 
