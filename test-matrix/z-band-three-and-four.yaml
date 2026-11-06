@@ -395,6 +395,27 @@
       file: src/pdf-text.test.ts
       test: "loadPdfText > leaves out text that runs up or down the page"
 
+    - id: F3.8
+      scenario: A mark near the start of a sentence that runs on for more lines than the one after the mark
+      expect: The quote reads on to the sentence's end, instead of stopping at the end of the next line
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "quoteForRects > follows a sentence down past the line after the mark"
+
+    - id: F3.9
+      scenario: A mark near the end of a sentence that began more lines up than the one before the mark
+      expect: The quote reads back to the sentence's start, instead of opening mid-sentence on the line above
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "quoteForRects > follows a sentence up past the line before the mark"
+
+    - id: F3.10
+      scenario: A mark in a long block with no sentence ends, such as a list or a table
+      expect: The quote stays to the lines next to the mark, rather than reprinting the block
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "quoteForRects > keeps a long block with no sentence ends to the lines next to the mark"
+
 - feature: A5
   name: Old documents don't break the account -- the assumption the patch rests on
   code: src/remarkable-metadata.ts
