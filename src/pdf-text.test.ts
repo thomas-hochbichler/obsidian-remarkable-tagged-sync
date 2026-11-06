@@ -465,6 +465,40 @@ describe("quoteForRects", () => {
 		expect(quote?.sentence).toContain(quote?.marked[0]);
 	});
 
+	// The Claude Science guide in the Demo vault: one sentence over five lines came out cut at
+	// "regulatory, and", because a quote only ever saw the lines next to the mark.
+	const LONG_SENTENCE = [
+		"The plan ends here. It sits inside a broader product family,",
+		"including the chat app, the coding tool and the platform,",
+		"that life sciences groups use for the document and regulatory",
+		"work around the science. The next sentence starts here.",
+	];
+	const longSentence = page(LONG_SENTENCE.map((text, index) => ({ text, y: 700 - index * 14 })));
+	const WHOLE_LONG_SENTENCE =
+		"It sits inside a broader product family, including the chat app, the coding tool and the platform, " +
+		"that life sciences groups use for the document and regulatory work around the science.";
+
+	it("follows a sentence down past the line after the mark", () => {
+		const quote = quoteForRects(longSentence, [rectOverText(LONG_SENTENCE[0], "sits", 700)]);
+
+		expect(quote?.sentence).toBe(WHOLE_LONG_SENTENCE);
+	});
+
+	it("follows a sentence up past the line before the mark", () => {
+		const quote = quoteForRects(longSentence, [rectOverText(LONG_SENTENCE[3], "science", 658)]);
+
+		expect(quote?.sentence).toBe(WHOLE_LONG_SENTENCE);
+	});
+
+	it("keeps a long block with no sentence ends to the lines next to the mark", () => {
+		const list = Array.from({ length: 21 }, (_, index) => `item ${index} of a list without an end`);
+		const block = page(list.map((text, index) => ({ text, y: 700 - index * 14 })));
+
+		const quote = quoteForRects(block, [rectOverText(list[10], "item", 700 - 10 * 14)]);
+
+		expect(quote?.sentence).toBe(list.slice(9, 12).join(" "));
+	});
+
 	// A heading carries no sentence terminator, so without the spacing rule the backward scan runs
 	// straight through it -- four of the acceptance page's nine quotes opened with their heading.
 	const HEADING = "Allgemeine Prinzipien";

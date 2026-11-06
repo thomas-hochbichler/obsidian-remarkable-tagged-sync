@@ -14,6 +14,10 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A digest quote carries its whole sentence.** A sentence longer than the lines next to your mark
+  came out cut off, as in `... for the document, regulatory, and`. A quote now reads on to the
+  sentence's start and end, up to eight lines each way. A list or table with no sentence ends stays
+  as short as before. A note picks this up the next time it is rewritten.
 - **The README's setup steps name the refresh icon.** They told you to click *Scan*, but under *Tag
   routing* the scan is now a refresh icon with the tooltip *Scan for tags*.
 - **The README's setup mentions three things a new user gets stuck on.** Turning on community
