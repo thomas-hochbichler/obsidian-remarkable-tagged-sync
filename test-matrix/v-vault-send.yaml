@@ -5,6 +5,9 @@
 # printed rounds of a prototype; nothing here can see them on a screen, so every one is pinned.
 # V2 is the print itself, against a fake <webview>: the order, every bounded wait, every failure
 # reason. The real print is checked in the Demo vault by a script, not here.
+# V3 is the note before the print: rendered by Obsidian, then dressed -- the markup passes on markup
+# the renderer really emitted (test-fixtures/rendered-notes/), the measuring passes on a layout set
+# by hand. Whether a real note prints like the prototype's round 9 is again a script's question.
 
 
 - feature: V1
@@ -151,6 +154,13 @@
       layer: unit
       file: src/note-print.test.ts
       test: "printStylesheet > places nothing left of the text column: a checkbox is pulled back no further than its list's own indent"
+
+    - id: V1.21
+      scenario: A note that embeds another note
+      expect: The embedded note prints at the note's own size and without margins of its own -- it is a reading view of its own, and at Obsidian's 16 px it printed half again as large and a column narrower
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > prints an embedded note at the note's own size, without its own margins"
 
 
 - feature: V2
@@ -311,3 +321,247 @@
       layer: unit
       file: src/print-surface.test.ts
       test: "obsidianHost > attaches the webview to the active document and reads the look from it"
+
+
+- feature: V3
+  name: A note as a print document -- rendered, dressed, printed
+  code: src/note-document.ts
+  tier: free
+  scenarios:
+    - id: V3.1
+      scenario: A note with properties and nothing else, or nothing at all
+      expect: Empty -- only whitespace follows the properties, with Unix or Windows line ends, also with empty properties
+      layer: unit
+      file: src/note-document.test.ts
+      test: "isEmptyNote > calls a note empty when nothing but whitespace follows its properties"
+
+    - id: V3.2
+      scenario: A note that shows something
+      expect: Not empty -- an image alone counts, and an unclosed `---` is a rule, not properties
+      layer: unit
+      file: src/note-document.test.ts
+      test: "isEmptyNote > does not call a note empty that shows anything, an image alone included"
+
+    - id: V3.3
+      scenario: A note with properties is dressed
+      expect: The file's name is an h1 on top; the renderer's hidden properties block is gone, so it neither prints nor counts as the first block
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > puts the file's name on top as an h1, and drops the hidden properties block"
+
+    - id: V3.4
+      scenario: A note that starts with its own h1
+      expect: That h1 is the only title -- never two
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > gives a note that starts with its own h1 that title only"
+
+    - id: V3.5
+      scenario: A note that is only an image
+      expect: It gets the file's name as its title, and the image stays
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > titles a note whose first block is no h1, even one holding only an image"
+
+    - id: V3.6
+      scenario: A file name with < or &
+      expect: The title is text, never markup
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > writes the title as text, never as markup"
+
+    - id: V3.7
+      scenario: A note embeds a PDF (whole or one page), audio, video and a canvas
+      expect: Each becomes one small line, "<file> (not included)" -- no viewer, player or cut-off drawing on the page
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > replaces each PDF, audio, video and canvas embed by one line naming its file"
+
+    - id: V3.8
+      scenario: An embed whose target is missing, an image, an embedded note
+      expect: The missing one keeps the box Obsidian draws (it says so already); images and embedded notes print
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > keeps the box Obsidian draws for an embed whose target does not exist, and every image and embedded note"
+
+    - id: V3.9
+      scenario: A PDF in a subfolder, embedded inside an embedded note
+      expect: Replaced as well, named without its folder or page
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > names an embedded file without its folder, and finds one inside an embedded note"
+
+    - id: V3.34
+      scenario: An unprintable embed without a link
+      expect: The line still says what is missing -- "An embedded file (not included)", never a bare "(not included)"
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > still says what is missing for an embed without a link"
+
+    - id: V3.10
+      scenario: Internal links, web links and tags
+      expect: Internal links -- wikilink, alias, heading, unresolved, Markdown -- lose their address and stay text; web links and tags keep theirs
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > takes the address off every internal link and leaves web links and tags as they are"
+
+    - id: V3.11
+      scenario: Emphasis in a paragraph of its own under an image or a diagram
+      expect: It is the figure's caption and gets the caption class
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > marks a paragraph of nothing but emphasis right after an image or a diagram as its caption"
+
+    - id: V3.12
+      scenario: Emphasis on the line right under an image, in the image's own paragraph
+      expect: The emphasis is the caption too
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > marks emphasis on the line right under an image, which Markdown keeps in the image's paragraph"
+
+    - id: V3.13
+      scenario: Emphasis that is no caption
+      expect: Not marked -- after a text paragraph, mixed with text, under words, or two emphases
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > takes no other emphasis for a caption: after a paragraph, mixed with text, or without an image before it"
+
+    - id: V3.14
+      scenario: A note that opens with emphasis
+      expect: Not a caption -- the title above it is no figure
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > takes no caption for emphasis that opens a note: the title above it is no figure"
+
+    - id: V3.15
+      scenario: The renderer's output for an empty note
+      expect: The title alone
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > dresses an empty note into its title alone"
+
+    - id: V3.16
+      scenario: A Mermaid diagram in print
+      expect: Sized so its labels come out at the diagram size (8.5 pt at Normal), not stretched to the column
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > sizes a diagram by its type, so its labels print at the diagram size"
+
+    - id: V3.17
+      scenario: A wide diagram
+      expect: Never wider than the column
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > never sizes a diagram wider than the column"
+
+    - id: V3.18
+      scenario: A diagram without a viewBox or a readable label
+      expect: Left as Obsidian drew it
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > leaves a diagram alone that has no viewBox or no label"
+
+    - id: V3.19
+      scenario: A top-level task list
+      expect: Shifted so its first box starts 5 px inside the column -- on the edge the print cut its left border off
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > shifts a top-level task list so its first box starts 5 px inside the column"
+
+    - id: V3.20
+      scenario: Padding on the view, a nested task list, a list without a box
+      expect: The column starts inside the padding; nested lists and box-less lists keep their indent
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > counts the view's own padding as outside the column, and leaves nested lists and lists without a box alone"
+
+    - id: V3.21
+      scenario: Code, a table, a callout, an image, a diagram, a quote -- short and long
+      expect: Shorter than the keep-whole limit -> kept on one page; at the limit or longer -> may split
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > keeps a block shorter than the keep-whole limit on one page and lets a longer one split"
+
+    - id: V3.22
+      scenario: The layout passes travel to the print page as text
+      expect: Their source runs on its own, with nothing from the module but the class names it is handed
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutSource > runs on its own, outside this module, with the class names handed in"
+
+    - id: V3.23
+      scenario: A note is rendered
+      expect: At the column's width, then 400 ms to settle, then dressed; the markup is read before the component unloads and the view is removed
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > renders at the column's width, settles, dresses, and hands back the markup before it unloads and removes the view"
+
+    - id: V3.24
+      scenario: A note with Mermaid blocks
+      expect: The render waits until each block holds its drawing, then settles
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > waits for the note's diagrams to be drawn before it settles"
+
+    - id: V3.25
+      scenario: A diagram that never draws
+      expect: The wait ends after 6 s and the note prints without it -- every wait is bounded
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > gives up on diagrams after 6 s and prints what is there"
+
+    - id: V3.26
+      scenario: Diagrams drawn by the time the render's promise settles
+      expect: No wait beyond the settling pause
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > does not wait for diagrams that are drawn already"
+
+    - id: V3.27
+      scenario: The render throws
+      expect: The off-screen view is removed all the same
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > removes the view when the render throws, with nothing to unload"
+
+    - id: V3.28
+      scenario: A note is printed
+      expect: On the chosen tablet's page, the PDF titled by the file's name, with the layout passes handed to the print surface
+      layer: unit
+      file: src/note-document.test.ts
+      test: "printNote > prints the dressed note on the chosen tablet's page, titled by the file, with the layout passes"
+
+    - id: V3.29
+      scenario: The render of a note to be sent throws
+      expect: A print failure with the render's message, so the send's notice says it; nothing is printed
+      layer: unit
+      file: src/note-document.test.ts
+      test: "printNote > turns a render that threw into a print failure with its message, and prints nothing"
+
+    - id: V3.30
+      scenario: Inside Obsidian, the view
+      expect: A reading view off-screen in the active document, at the column's width
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > renders off-screen in the active document, as a reading view at the column's width"
+
+    - id: V3.31
+      scenario: Inside Obsidian, the render
+      expect: MarkdownRenderer.render under a Component loaded before, unloaded after the markup was read
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > renders under a loaded component and hands back its unload"
+
+    - id: V3.32
+      scenario: Inside Obsidian, a render that throws
+      expect: The component is unloaded, the error passed on
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > unloads the component itself when the render throws"
+
+    - id: V3.33
+      scenario: Inside Obsidian, the waits
+      expect: On the active window's timers, the window the note is rendered in
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > sleeps on the active window's timers and tells the time"

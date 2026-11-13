@@ -11,9 +11,11 @@
 
 export {
 	apiVersion,
+	Component,
 	debounce,
 	FuzzySuggestModal,
 	MarkdownRenderChild,
+	MarkdownRenderer,
 	MarkdownView,
 	Modal,
 	normalizePath,

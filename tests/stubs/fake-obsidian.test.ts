@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as obsidianSurface from "./obsidian";
 import {
 	checkPath,
+	Component,
 	createFragment,
 	debounce,
 	DropdownComponent,
@@ -12,6 +13,7 @@ import {
 	FakeEl,
 	FakeVault,
 	FuzzySuggestModal,
+	MarkdownRenderer,
 	normalizePath,
 	parseLinktext,
 	Plugin,
@@ -361,6 +363,18 @@ describe("the plugin host", () => {
 		// Enabled by hand, long after startup: Obsidian runs it straight away.
 		app.workspace.onLayoutReady(() => ran.push("late"));
 		expect(ran).toEqual(["early", "late"]);
+	});
+});
+
+describe("rendering a note", () => {
+	it("keeps a component's loaded state and refuses to invent what the renderer draws", async () => {
+		const component = new Component();
+		component.load();
+		expect(component.loaded).toBe(true);
+		component.unload();
+		expect(component.loaded).toBe(false);
+
+		await expect(MarkdownRenderer.render()).rejects.toThrow(/not modelled/);
 	});
 });
 

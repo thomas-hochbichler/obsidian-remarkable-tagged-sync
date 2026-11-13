@@ -176,6 +176,9 @@ export function printStylesheet(page: PrintPage): string {
 			.join(", ");
 	return [
 		`${note} { font-size: ${page.bodyPt}pt !important; line-height: ${LINE_HEIGHT} !important; padding: 0 !important; max-width: none !important; width: 100% !important; }`,
+		// An embedded note is a reading view of its own, with Obsidian's size and file margins: at
+		// 16 px in a 10 pt note it printed half again as large and a column narrower (ticket 12).
+		`${inNote(".markdown-preview-view")} { font-size: inherit !important; line-height: inherit !important; padding: 0 !important; max-width: none !important; width: 100% !important; }`,
 		// A heading at the foot of a page with its text on the next is the break readers notice most.
 		`${inNote("h1, h2, h3, h4, h5, h6")} { break-after: avoid; }`,
 		`${inNote("p, li")} { orphans: 3; widows: 3; }`,
@@ -192,7 +195,9 @@ export function printStylesheet(page: PrintPage): string {
 		`${inNote("ul.contains-task-list")} { padding-inline-start: ${TASK_INDENT_EM}em !important; margin-inline-start: 0 !important; }`,
 		`${inNote("li.task-list-item")} { list-style: none !important; }`,
 		`${inNote("li.task-list-item > .task-list-item-checkbox, li.task-list-item > p > .task-list-item-checkbox")} { margin-inline-start: -${TASK_INDENT_EM}em !important; margin-inline-end: 0.55em !important; }`,
-		`${inNote(`p.${CAPTION_CLASS}`)} { font-size: ${CAPTION_RATIO}em !important; margin-top: 0.2em !important; }`,
+		// A paragraph of its own, or the emphasis on the line under an image (pass 4); the margin only
+		// moves the paragraph.
+		`${inNote(`.${CAPTION_CLASS}`)} { font-size: ${CAPTION_RATIO}em !important; margin-top: 0.2em !important; }`,
 		`${inNote(`.${MISSING_EMBED_CLASS}`)} { font-size: ${CAPTION_RATIO}em; color: var(--text-muted); }`,
 		`${inNote(`.${KEEP_WHOLE_CLASS}`)} { break-inside: avoid; }`,
 	].join("\n");

@@ -109,6 +109,12 @@ describe("printStylesheet", () => {
 		expect(large).toContain("font-size: 8.4pt !important; line-height: 1.35");
 	});
 
+	it("prints an embedded note at the note's own size, without its own margins", () => {
+		const css = printStylesheet(printPage(rm2));
+
+		expect(css).toContain(`.print .${SEND_CLASS} .markdown-preview-view { font-size: inherit !important; line-height: inherit !important; padding: 0 !important;`);
+	});
+
 	it("keeps headings with what follows, wraps code and sizes tables by their content", () => {
 		const css = printStylesheet(printPage(rm2));
 
@@ -125,7 +131,7 @@ describe("printStylesheet", () => {
 	it("styles the caption, the missing embed and the kept-whole block by their classes", () => {
 		const css = printStylesheet(printPage(rm2));
 
-		expect(css).toContain(`p.${CAPTION_CLASS} { font-size: 0.85em !important;`);
+		expect(css).toContain(`.${SEND_CLASS} .${CAPTION_CLASS} { font-size: 0.85em !important;`);
 		expect(css).toContain(`.${MISSING_EMBED_CLASS} { font-size: 0.85em; color: var(--text-muted); }`);
 		expect(css).toContain(`.${KEEP_WHOLE_CLASS} { break-inside: avoid; }`);
 	});
