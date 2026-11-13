@@ -75,6 +75,18 @@ describe("the cloud's Zotero folder", () => {
 		expect(putFolder).toHaveBeenCalled();
 	});
 
+	// A vault send's look listed the account a moment before; a second listing costs ~7 s in Obsidian.
+	it("is the one a look handed in, without listing the account again", async () => {
+		const putFolder = vi.fn();
+		const putPdf = vi.fn(async () => ({ id: "doc-1" }) as ItemRef);
+		const listItems = vi.fn(async () => [folder()]);
+
+		expect(await sendToCloud(api({ listItems, putFolder, putPdf }), { ...document, folderId: "f-7" })).toEqual({ docId: "doc-1", folderId: "f-7" });
+		expect(listItems).not.toHaveBeenCalled();
+		expect(putFolder).not.toHaveBeenCalled();
+		expect(putPdf).toHaveBeenCalledWith(document.visibleName, document.bytes, { parent: "f-7", tags: [], refresh: false });
+	});
+
 	it("is the same one of two every time", async () => {
 		const parents: (string | undefined)[] = [];
 		const putPdf = vi.fn(async (_name: string, _bytes: Uint8Array, opts?: { parent?: string }) => {
@@ -245,6 +257,7 @@ describe("what an earlier copy of a vault send is now (send spec §3)", () => {
 		expect(await lookAtEarlierCopies(api, [recorded()], "Zotero", SENT_AS)).toEqual({
 			copies: [{ docId: "doc-a", state: "untouched", ref: { id: "doc-a", hash: "hash-a" } }],
 			strangerNamed: false,
+			folderId: "f-1",
 		});
 		expect(calls).toEqual(["listItems", "getContent doc-a", "getEntries doc-a"]);
 	});
@@ -336,7 +349,7 @@ describe("a document of the same name in the send folder that the vault did not 
 	it("is reported and never classed or looked into", async () => {
 		const { api, calls } = account([folder(), sentCopy({ id: "doc-x", hash: "hash-x" })]);
 
-		expect(await lookAtEarlierCopies(api, [], "Zotero", SENT_AS)).toEqual({ copies: [], strangerNamed: true });
+		expect(await lookAtEarlierCopies(api, [], "Zotero", SENT_AS)).toEqual({ copies: [], strangerNamed: true, folderId: "f-1" });
 		expect(calls).toEqual(["listItems"]);
 	});
 
@@ -353,6 +366,17 @@ describe("a document of the same name in the send folder that the vault did not 
 		expect((await lookAtEarlierCopies(account([folder(), second, ...elsewhere]).api, [], "Zotero", SENT_AS)).strangerNamed).toBe(false);
 		// No folder yet: the send makes it, and nothing can be in it.
 		expect((await lookAtEarlierCopies(account([sentCopy({ id: "doc-x", parent: "" })]).api, [], "Zotero", SENT_AS)).strangerNamed).toBe(false);
+	});
+});
+
+describe("the send folder as the look found it (ticket 16: one listing per vault send)", () => {
+	// The upload takes this id instead of listing the whole account a second time.
+	it("is named by its id -- the lowest of two, as the upload would pick -- and not at all where the account has none", async () => {
+		const second = { ...folder(), id: "f-9" } as Entry;
+		const nested = { ...folder(), id: "f-0", parent: "f-other" } as Entry;
+
+		expect((await lookAtEarlierCopies(account([second, folder(), nested]).api, [], "Zotero", SENT_AS)).folderId).toBe("f-1");
+		expect(await lookAtEarlierCopies(account([nested]).api, [], "Zotero", SENT_AS)).not.toHaveProperty("folderId");
 	});
 });
 

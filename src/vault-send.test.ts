@@ -303,6 +303,18 @@ describe("a second send over the cloud (send spec §3)", () => {
 		expect(h.looked[0]).toEqual([{ docId: "old", name: "Login-Spec", folderId: "folder-1" }, { docId: "lost" }]);
 	});
 
+	it("uploads into the folder the look found, and leaves the lookup to the upload where the look found none or failed", async () => {
+		const found = harness({ look: { copies: [], strangerNamed: false, folderId: "folder-1" } });
+		const none = harness({ look: { copies: [], strangerNamed: false } });
+		const failed = harness({ look: new Error("HTTP 502") });
+
+		for (const h of [found, none, failed]) await sendFromVault(h.deps, NOTE);
+
+		expect(found.uploads[0]).toEqual({ visibleName: "Login-Spec", bytes: PRINTED, folder: "Obsidian", folderId: "folder-1" });
+		expect(none.uploads[0]).not.toHaveProperty("folderId");
+		expect(failed.uploads[0]).not.toHaveProperty("folderId");
+	});
+
 	it("swaps an untouched copy into the trash after the upload, without a question", async () => {
 		const h = harness({ sends: { old: earlier() }, look: classed({ old: "untouched" }) });
 

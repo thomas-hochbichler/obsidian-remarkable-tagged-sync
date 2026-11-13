@@ -135,6 +135,7 @@ describe("sending a PDF through the cloud", () => {
 		expect(await cloud.earlierCopies([{ docId: "doc-1", name: "Prompting", folderId: "folder-1" }], "Zotero", "Prompting")).toEqual({
 			copies: [{ docId: "doc-1", state: "untouched", ref: { id: "doc-1", hash: "h-1" } }],
 			strangerNamed: false,
+			folderId: "folder-1",
 		});
 		expect(session).toHaveBeenCalled();
 	});

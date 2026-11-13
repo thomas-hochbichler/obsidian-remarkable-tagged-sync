@@ -865,6 +865,20 @@
       file: src/cloud-send.test.ts
       test: "the cloud's Zotero folder > is named in the answer, whether it was there or made"
 
+    - id: V5.30
+      scenario: A vault send hands the upload the folder id its look just found
+      expect: The document goes into that folder; the account is not listed again and no folder is made -- one listing per send, not two (~7 s in Obsidian)
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "the cloud's Zotero folder > is the one a look handed in, without listing the account again"
+
+    - id: V5.31
+      scenario: The look's listing holds the send folder twice, nested folders of that name, or none
+      expect: The lowest top-level id, the one the upload's own lookup would pick; nothing where there is no such folder, so the upload makes it as before
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "the send folder as the look found it (ticket 16: one listing per vault send) > is named by its id -- the lowest of two, as the upload would pick -- and not at all where the account has none"
+
     - id: V5.2
       scenario: The earlier copy is listed where and as what it was sent, unpinned, with no tag, no page tag and no .rm file
       expect: Untouched, with the listing's id and hash; exactly one listing, one getContent and one getEntries were made
@@ -1346,6 +1360,13 @@
       layer: unit
       file: src/vault-send.test.ts
       test: "a second send over the cloud (send spec §3) > looks at the earlier copies before the upload, with the name and folder they were sent as"
+
+    - id: V7.36
+      scenario: The look found the send folder, found none, or failed
+      expect: The upload is handed the found folder's id; without one it looks the folder up by name itself
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > uploads into the folder the look found, and leaves the lookup to the upload where the look found none or failed"
 
     - id: V7.18
       scenario: The earlier copy is untouched

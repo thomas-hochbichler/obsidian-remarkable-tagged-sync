@@ -86,9 +86,16 @@ export async function namesInCloudFolder(api: CloudSendApi, name: string): Promi
 	return items.filter((item) => item.type === "DocumentType" && folders.has(item.parent ?? "")).map((item) => item.visibleName);
 }
 
-/** Adds one PDF and answers the id the cloud gave it, and the folder it went into. */
+/**
+ * Adds one PDF and answers the id the cloud gave it, and the folder it went into.
+ *
+ * A folder id handed in is taken as it is: a vault send's look found it in a listing made a moment
+ * before, and listing the account again would cost as long as the upload. The folder deleted on the
+ * tablet in that moment is the one case it misses -- the document then sits in a folder in the
+ * trash, where the user just put the folder.
+ */
 export async function sendToCloud(api: CloudSendApi, document: SendDocument): Promise<{ docId: string; folderId: string }> {
-	const parent = await folderId(api, document.folder);
+	const parent = document.folderId ?? (await folderId(api, document.folder));
 	const entry = await withGenerationRetries((refresh) =>
 		api.putPdf(document.visibleName, document.bytes, { parent, tags: [], refresh }),
 	);
@@ -132,7 +139,7 @@ export async function lookAtEarlierCopies(api: CloudSendApi, copies: readonly Ea
 		sendFolder !== undefined &&
 		items.some((item) => item.type === "DocumentType" && item.parent === sendFolder && item.visibleName === visibleName && !ours.has(item.id));
 
-	return { copies: classed, strangerNamed };
+	return { copies: classed, strangerNamed, ...(sendFolder === undefined ? {} : { folderId: sendFolder }) };
 }
 
 /** The tests of {@link lookAtEarlierCopies}, cheapest first. */

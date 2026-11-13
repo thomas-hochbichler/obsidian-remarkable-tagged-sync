@@ -237,8 +237,10 @@ async function send<F extends VaultFile>(deps: VaultSendDeps<F>, file: F): Promi
 			}
 		}
 
-		// 5. Upload. A failure here leaves no document to record and no reason to clear anything.
-		const { docId, folderId } = await transport.putPdf({ visibleName: name, bytes, folder: deps.folder });
+		// 5. Upload, into the folder the look just found where it found one -- one account listing per
+		// send instead of two. A failure here leaves no document to record and no reason to clear anything.
+		const found = look?.folderId === undefined ? {} : { folderId: look.folderId };
+		const { docId, folderId } = await transport.putPdf({ visibleName: name, bytes, folder: deps.folder, ...found });
 
 		// 6. Record, into the map as it is now.
 		const sent: VaultSend = { origin: file.path, kind, sentAt: deps.now().toISOString(), name, folderId };

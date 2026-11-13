@@ -26,6 +26,12 @@ export interface SendDocument {
 	readonly bytes: Uint8Array;
 	/** The tablet folder, by name. Created when it is not there; looked up by name, never renamed (§2.4). */
 	readonly folder: string;
+	/**
+	 * That folder's id, where a vault send's look has just found it in its own listing
+	 * ({@link EarlierCopyLook.folderId}). The upload then skips the folder lookup -- a second listing of
+	 * the whole account, ~7 s in Obsidian (ticket 16's live check). Absent: looked up by name.
+	 */
+	readonly folderId?: string;
 	// No sync tag, on purpose (decided 2026-09-13, after the live test): a tag put on by the plugin is
 	// one the reader never chose, and with one mapped tag it went on without a question. The paper is
 	// on the tablet; the reader tags it there when they want it back, like every other document.
@@ -59,6 +65,8 @@ export interface EarlierCopyLook {
 	readonly copies: readonly EarlierCopyState[];
 	/** The send folder holds a document of the new one's name that is none of these copies: it is never touched, and the new one lands beside it. */
 	readonly strangerNamed: boolean;
+	/** The send folder's id, as the same listing found it; absent where the account has no such folder yet. Handed to the upload. */
+	readonly folderId?: string;
 }
 
 export interface SendTransport {
