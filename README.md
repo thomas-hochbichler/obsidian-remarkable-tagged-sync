@@ -38,8 +38,10 @@ it does on a Mac.
 Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
 **Desktop only** · **one-way** (reMarkable → Obsidian, and → Zotero and Readwise) · **Sync never
-writes to your tablet.** Send puts a PDF on it only when you run it — and only adds, never changes,
-deletes or moves anything.
+writes to your tablet.** Send puts a PDF on it only when you run it, and never changes, deletes or
+moves anything you put there yourself. The one thing it clears away is its own earlier copy of a
+vault file, into the tablet's trash: without asking while nobody has touched that copy, and only on
+your say-so once you have.
 
 ## What makes it different
 
@@ -49,7 +51,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 |---|:---:|:---:|
 | **Direction & safety** | | |
 | [reMarkable → Obsidian sync](#how-it-works) | ✓ | ✓ |
-| [One-way by design — Sync never writes to your tablet; Send only adds, and only when you run it](#what-gets-synced) | ✓ | ✓ |
+| [One-way by design — Sync never writes to your tablet; Send acts only when you run it](#what-gets-synced) | ✓ | ✓ |
 | [No reMarkable Connect subscription needed](#install-and-set-up) | ✓ | ✓ |
 | [Sync straight from the tablet, without the reMarkable cloud](#syncing-without-the-cloud) | — | ✓ |
 | [Your edits are never silently overwritten](#writing-your-own-notes) | ✓ | ✓ |
@@ -73,6 +75,11 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Cloud transcription with your own API key](#tagged-sync-pro) | — | ✓ |
 | [Re-transcribe notes you already synced](#re-transcribing) | ✓ | ✓ |
 | [Repair one note without re-running the whole vault](#re-transcribing) | ✓ | ✓ |
+| **Send from the vault** | | |
+| [Send a note or a PDF from your vault to your tablet](#send-from-the-vault) | ✓ | ✓ |
+| [A note printed the way Obsidian shows it, on a page the size of your tablet's screen](#what-a-sent-note-looks-like) | ✓ | ✓ |
+| [Your marks come back as one note that links to the note it came from](#the-loop) | ✓ | ✓ |
+| [Send without the reMarkable cloud, over SSH](#syncing-without-the-cloud) | — | ✓ |
 | **Zotero** | | |
 | [Zotero connection](#connecting) | zotero.org | zotero.org + desktop app |
 | [Send a Zotero PDF to your tablet](#zotero) | ✓ | ✓ |
@@ -118,6 +125,7 @@ Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 - [Handwriting transcription](#handwriting-transcription)
 - [Typed text and the Type Folio](#typed-text-and-the-type-folio)
 - [Tagged Sync Pro](#tagged-sync-pro)
+- [Send from the vault](#send-from-the-vault)
 - [Zotero](#zotero)
 - [Readwise](#readwise)
 - [Syncing without the cloud](#syncing-without-the-cloud)
@@ -412,9 +420,9 @@ Everything not listed here is free and stays free. These are paid:
 - **[Zotero write-back, the desktop app and group libraries](#zotero)** — what you marked on the
   tablet lands in Zotero as native annotations, the plugin can talk to the Zotero desktop app
   instead of only to zotero.org, and it can use your [group libraries](#connecting). Sending a paper
-  to the tablet over SSH is Pro too, as part of [syncing without the
-  cloud](#syncing-without-the-cloud). Sending a paper over the reMarkable cloud and the note's link
-  to its Zotero item are free.
+  — or a [note or PDF from the vault](#send-from-the-vault) — to the tablet over SSH is Pro too, as
+  part of [syncing without the cloud](#syncing-without-the-cloud). Sending over the reMarkable cloud
+  and the note's link to its Zotero item are free.
 - **[Pushing to Readwise](#readwise)** — your highlights and margin notes go into your Readwise
   library and come up in your Daily Review.
 
@@ -458,6 +466,102 @@ Updates come through the Obsidian plugin store, to everyone, for as long as the 
 I promise is effort, not dates.
 
 None of this changes your rights as a consumer under EU law.
+
+## Send from the vault
+
+Put a note or a PDF from your vault on your tablet, to read and mark up there. A PDF goes up as it
+is; a note is printed the way Obsidian shows it, on a page the size of your tablet's screen.
+
+Open the file and run **Tagged Sync for reMarkable: Send this file to reMarkable** from the command
+palette, or right-click a note or a PDF — in the file explorer or on its tab — and choose **Send to
+reMarkable**. It lands in one folder on the tablet, `Obsidian` unless you name another under Settings
+→ *Send from the vault*, called like the file and without a tag. That folder may be the same one your
+Zotero papers go to.
+
+This is free over the reMarkable cloud. Over SSH, without the cloud, it is part of
+[Tagged Sync Pro](#tagged-sync-pro) and uses the same switch as the Zotero send. Sending uploads one
+PDF to your reMarkable account: the file itself, or the printed note with the notes and images it
+embeds. Nothing is sent until you run the command.
+
+### The loop
+
+1. Send a note — a spec, a draft, a chapter.
+2. Read it on the tablet and mark it up: highlight, underline, write in the margin.
+3. Tag the document, or any page of it, with your sync tag.
+4. Sync. **One note comes back for the whole document**, whichever pages you tagged, called
+   *Login-Spec — marked up*. It lands in the folder your tag is mapped to and quotes what you marked
+   under the heading it sits under. A line at its top says where it came from — `Sent from
+   [[Specs/Login-Spec|Login-Spec]] on 2026-11-13` — so your note's backlinks find it.
+5. Hand that note to whoever revises the text — yourself, a colleague, or an AI.
+
+Nothing is ever written into the note you sent. Rename or move it in Obsidian and the link follows;
+delete it and the line keeps its name as plain text. Send it again later and you get a new copy, and
+a second note when it comes back.
+
+What to expect from the marks:
+
+- **Highlighter and underline come back exact**, with the sentence around them, like any
+  [marked-up PDF](#annotated-pdfs).
+- **A short handwritten remark comes back as text; a long one can arrive in pieces.** Handwriting is
+  read by your [transcription backend](#handwriting-transcription) — on your own machine unless you
+  chose a cloud one — and only with [*Your notes on PDFs*](#the-notes-you-write-in-the-margin)
+  switched on.
+- **The sync tells you once** when a sent document has marks but no sync tag, so nothing came back,
+  and when handwriting on it was not read because *Your notes on PDFs* is off — after an automatic
+  sync too.
+
+Nothing in the loop needs Pro.
+
+### What a sent note looks like
+
+- **The page is your tablet's screen.** *Tablet* (`reMarkable 1, 2 or Paper Pure` or `Paper Pro`) is
+  taken from your synced pages until you choose, so the text is the same size on either.
+- **Two text sizes.** *Text size* is `Normal` (10 pt) or `Large` (12 pt); code, tables and diagrams
+  follow in proportion.
+- **The toolbar never covers text.** The wide margin is on the left, where the tablet's toolbar sits.
+  If your tablet is in left-handed mode, switch on *Toolbar on the right*.
+- **The file name is the title**, unless the note starts with a heading of its own. Properties are
+  not printed. The note's headings become the PDF's outline, which is how the marks find their
+  headings on the way back.
+- **Always light, with your theme, your snippets and your font.** Embedded notes and images are
+  printed in place; links are underlined text.
+
+### A second send
+
+Send the same file again and the new version goes up first. Then the earlier copy:
+
+- **Nobody touched it** — no ink, no tag, not moved, renamed or pinned: it goes to the tablet's trash
+  without a question.
+- **You did**: you are asked. *Keep it* is the default, and a copy you keep is never asked about
+  again. *Move it to the trash* clears it; marks you have not synced yet go with it, and the trash
+  keeps it until you empty it.
+- **A document of the same name that this vault did not send** — a manual upload, another vault's
+  copy, a Zotero paper — is never touched. The new one lands beside it, and the notice says so.
+
+Over SSH nothing is replaced: the earlier copy stays, and the notice says so. The notes that came
+back from an earlier copy stay in your vault as they are.
+
+### Good to know
+
+- A Paper Pro Move is not in the list yet. A sent note reads best there in landscape, where the page
+  fills the width.
+- Blocks drawn by other plugins, such as Dataview, Tasks or Bases, can be missing or incomplete in a
+  sent note. Look at the first one you send.
+- Embedded PDFs, audio, video and canvases are not printed; a line names the file instead.
+- Chinese characters and Japanese kanji are missing from a sent note on a Mac, as they are from
+  Obsidian's own *Export to PDF*. Until that is solved, send such a note as a PDF made with another
+  app.
+- Printing a note is built and checked on macOS. Windows and Linux use the same mechanism and have
+  not been checked; if a sent note looks wrong there, please
+  [open an issue](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues) with
+  a photo.
+- A sent note carries the class `tagged-sync-send`, so a CSS snippet of your own can restyle it on
+  the tablet only:
+
+  ```css
+  /* Darker code comments on the tablet */
+  .tagged-sync-send .token.comment { color: #444; }
+  ```
 
 ## Zotero
 
@@ -622,7 +726,8 @@ through this plugin.
 **What arrives.** Each document becomes one entry in Readwise: an EPUB arrives as a book, anything
 else — a PDF, a typed document, an article sent with *Read on reMarkable* — as an article. Its title
 and author come from Zotero when the note knows its Zotero item, otherwise from the EPUB itself,
-otherwise it is the document's name on the tablet, with no author. Every passage you marked is one
+otherwise it is the document's name on the tablet, with no author. A note you [sent from the
+vault](#send-from-the-vault) is pushed like any document, as an article named like the note. Every passage you marked is one
 highlight: the sentence it sits in, with the words you marked in bold, and its page number. A
 margin note anchored to the passage becomes that highlight's note; a margin note on its own, and a
 page you added on the tablet, become highlights of their own. The typed pages of a notebook go too;
@@ -830,7 +935,9 @@ Three things worth knowing before you rely on it:
 
 - A notebook tagged with a mapped tag syncs as one note for the whole notebook.
 - An individual page tagged with a mapped tag syncs as its own note, independent of any
-  notebook-level tag.
+  notebook-level tag. One exception: on a document you [sent from your vault](#send-from-the-vault),
+  a page tag counts as a tag on the document. It comes back as one note for the whole document,
+  called "… — marked up", whichever pages you tagged.
 - A **folder** tagged with a mapped tag hands that tag to everything inside it — every notebook and
   PDF, and the ones in folders nested below as well. Each of them then syncs exactly as if you had
   tagged it yourself. One tag can therefore bring in a great deal at once, so look at how much sits
@@ -865,7 +972,9 @@ Three things worth knowing before you rely on it:
   not change is not rewritten, so it keeps the name it had. Its contents stay right: the links inside
   it address the page of the source PDF, which insertion does not renumber. Only the file name can go
   stale, and only until that page changes and the note is written again. A note that would land on a
-  name already taken gets a suffix rather than overwriting anything.
+  name already taken gets a suffix rather than overwriting anything. A document you sent from your
+  vault gets no page notes: it comes back as one note, "… — marked up", and a second copy's note adds
+  its send date.
 - **A book laid out again on the tablet is reported.** Its page count changes when its font, size or
   margins do, and marks made before that keep their place while the text moves — so their quotes may
   no longer be the sentences you marked. Said once per book, when the sync first sees the new count.
@@ -963,8 +1072,10 @@ stays where it is and is still preserved on every sync — new notes just no lon
 ## Limitations
 
 - Desktop only. Obsidian on mobile is unsupported.
-- One-way sync: reMarkable → Obsidian, and → Zotero and Readwise. Nothing on your tablet is ever
-  changed, deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
+- One-way sync: reMarkable → Obsidian, and → Zotero and Readwise. Sync never changes, deletes,
+  moves, renames or re-tags anything on your tablet; [Send](#send-from-the-vault) adds a document to it,
+  and clears away nothing but its own earlier copy of a vault file. A [Zotero send](#zotero) only
+  ever adds.
 - [Zotero](#zotero) works with **PDF attachments only** — an EPUB in your library cannot be sent,
   and a book you read on the tablet is not matched to one.
 - **The render in Zotero needs Zotero Storage.** *Add the render to Zotero* uploads over zotero.org
@@ -1021,9 +1132,16 @@ This plugin makes network requests to exactly one place by default:
 - **reMarkable cloud** (the default source; not needed if you [sync straight from the
   tablet](#syncing-without-the-cloud)) — the plugin authenticates to `my.remarkable.com` via a
   one-time device code, then reads your notebook/page list, tags, and content over the
-  reMarkable cloud API to sync it into your vault. It reads only; the one thing it ever writes is
-  a PDF you sent yourself with [Send a Zotero PDF](#zotero). Nothing already in your reMarkable
-  account is changed, deleted, moved, renamed or re-tagged.
+  reMarkable cloud API to sync it into your vault. It reads only, with two exceptions, each of
+  which you ask for: a PDF you sent yourself — a paper with [Send a Zotero PDF](#zotero), or a note
+  or PDF with [Send from the vault](#send-from-the-vault) — and, on a second vault send, moving the
+  plugin's own earlier copy of that file to your tablet's trash. A vault send uploads one PDF to
+  your reMarkable account: the file itself, or the printed note with the notes and images it
+  embeds. Nothing else in your account is changed, deleted, moved, renamed or re-tagged.
+
+**Images from the web in a note you send.** A note that shows an image from a web address loads it
+again while it is printed, exactly as Obsidian does when it shows the note. The plugin adds no
+request of its own.
 
 **Your tablet, over your own network — only if you set it up**
 ([Syncing without the cloud](#syncing-without-the-cloud), [Tagged Sync Pro](#tagged-sync-pro)):
@@ -1034,8 +1152,10 @@ This plugin makes network requests to exactly one place by default:
   `sha256sum` to hash them so it can tell what changed. It reads only, with three exceptions, each
   of which you ask for: pairing appends one public key to `/home/root/.ssh/authorized_keys`; if you
   agree when asked, `rm-ssh-over-wlan on` keeps the tablet accepting connections over Wi-Fi; and
-  [Send a Zotero PDF](#zotero) over SSH writes the new document's three files and restarts the
-  tablet's reading app so it notices them. Nothing already on the tablet is touched.
+  a send over SSH — [a Zotero PDF](#zotero), or a note or PDF [from the
+  vault](#send-from-the-vault) — writes the new document's three files and restarts the tablet's
+  reading app so it notices them. Nothing already on the tablet is touched: over SSH a vault send
+  never replaces its earlier copy.
 
   **This connection stays on your network.** It goes to your tablet and nowhere else; no server of
   mine and none of reMarkable's is involved, and with it configured a sync needs no internet
@@ -1139,7 +1259,7 @@ Two things, both only on the paths your OS reserves for exactly this:
 
 ### Other permissions this plugin uses
 
-Three behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
+Four behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
 
 - **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
   version, Obsidian version, platform, whether Apple Vision is available, the selected transcription
@@ -1164,6 +1284,11 @@ Three behaviours show up in Obsidian's automated plugin review, so they are spel
   started directly, never through a shell; the only things filled in are the plugin's own temporary
   page images, the folder it keeps the local model in, and its built-in transcription prompt —
   nothing you type is passed to them.
+- **A hidden print view.** To print a note you [send from the vault](#send-from-the-vault), the
+  plugin opens an invisible embedded page (Electron's `<webview>`) inside Obsidian, fills it with
+  the note as Obsidian renders it, and asks it for a PDF. It loads Obsidian's own bundled start
+  page and nothing from the network beyond the note's own images; it is removed as soon as the PDF
+  exists. The PDF is held in memory and uploaded; no file is written outside your vault.
 
 ## Support
 
