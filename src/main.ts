@@ -54,6 +54,7 @@ import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
+import { dropExpired, markListedSends, remapOrigins } from "./vault-sends";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
 import { deletedBookOf, readwiseBookUrl } from "./readwise-links";
@@ -549,18 +550,23 @@ export default class TaggedSyncPlugin extends Plugin {
 	/**
 	 * Keeps `data.json` note paths accurate when the user renames or moves a synced note (or a folder
 	 * containing one) -- the note has no frontmatter to re-find it by, so without this its row would
-	 * strand and the next sync would duplicate it. Ignored during a sync: a sync moves notes itself
-	 * and replaces the whole index when it finishes, so reacting mid-run would only persist a transient
-	 * state the sync immediately overwrites.
+	 * strand and the next sync would duplicate it. The rows are left alone during a sync: a sync moves
+	 * notes itself and replaces the whole index when it finishes, so reacting mid-run would only
+	 * persist a transient state the sync immediately overwrites.
+	 *
+	 * The origins of sent documents follow the rename always, during a sync too (send spec §12 F3).
+	 * The sync never replaces that record with a copy of its own; it hands back marks applied to the
+	 * live map, so what is written here survives the sync's save.
 	 */
 	private async onVaultRename(file: TAbstractFile, oldPath: string): Promise<void> {
-		if (this.syncing) return;
 		const kind = file instanceof TFolder ? "folder" : file instanceof TFile ? "file" : null;
 		if (kind === null) return;
-		const rows = remapRows(this.data.syncIndex.rows, { kind, from: oldPath, to: file.path });
-		if (rows === null) return;
-		this.data.syncIndex.rows = rows;
-		await this.saveData(this.data);
+		const renamed = { kind, from: oldPath, to: file.path } as const;
+		const sends = remapOrigins(this.data.vaultSends, renamed);
+		if (sends !== null) this.data.vaultSends = sends;
+		const rows = this.syncing ? null : remapRows(this.data.syncIndex.rows, renamed);
+		if (rows !== null) this.data.syncIndex.rows = rows;
+		if (sends !== null || rows !== null) await this.saveData(this.data);
 	}
 
 	/**
@@ -806,6 +812,12 @@ export default class TaggedSyncPlugin extends Plugin {
 			// document is on the tablet while listings keep finding it, tagged or not. `null` means the
 			// run never listed -- the root hash was unchanged, so nothing on the tablet moved.
 			if (result.documentIds !== null) this.data.zoteroLinks = markListed(this.data.zoteroLinks, result.documentIds, this.nowIso());
+			// The vault's own sends by the same listing (send spec §5), on the live map: a rename or a
+			// send made while the run went on is in it already.
+			if (result.documentIds !== null) {
+				const now = this.nowIso();
+				this.data.vaultSends = dropExpired(markListedSends(this.data.vaultSends, result.documentIds, now), new Date(now));
+			}
 
 			// The one-time pass that brings already-written notes up to the current managed key set
 			// (#107, #109). Without it a vault that has settled would never receive a new key at all:

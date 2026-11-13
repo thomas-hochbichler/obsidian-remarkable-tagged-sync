@@ -24,6 +24,7 @@ import type { BackendSettings } from "./ocr-registry";
 import { DEFAULT_SSH_SETTINGS, type SshSettings } from "./ssh-transport";
 import type { StoredHashes } from "./ssh-hash-cache";
 import { DEFAULT_READWISE_SETTINGS, type ReadwiseSettings, type StoredReadwiseBooks } from "./readwise-state";
+import type { StoredVaultSends } from "./vault-sends";
 import type { StoredZoteroLinks } from "./zotero-links";
 import { DEFAULT_ZOTERO_SETTINGS, type ZoteroSettings } from "./zotero-settings";
 import { EMPTY_SYNC_INDEX, type SyncIndex, type SyncIndexRow } from "./sync-engine";
@@ -74,6 +75,11 @@ export interface TaggedSyncData {
 	 * The pair is `ssh` and `sshHashes` again: one block the user filled in, one the plugin keeps.
 	 */
 	zoteroLinks: StoredZoteroLinks;
+	/**
+	 * Which tablet documents this vault sent, and from which file, by document uuid (send spec §5).
+	 * Opaque here, like `zoteroLinks`; only `vault-sends.ts` reads inside it.
+	 */
+	vaultSends: StoredVaultSends;
 	tagFolderMap: TagFolderMap;
 	syncIndex: SyncIndex;
 	ocrBackend: OcrBackendId;
@@ -139,6 +145,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	sshHashes: {},
 	zotero: DEFAULT_ZOTERO_SETTINGS,
 	zoteroLinks: {},
+	vaultSends: {},
 	tagFolderMap: {},
 	syncIndex: EMPTY_SYNC_INDEX,
 	// Placeholder only -- the effective default is platform-derived on load (multi-provider spec §7).
@@ -244,6 +251,9 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// Carried whole, like `sshHashes` and `llmProviders` above it: this file is synced between
 		// machines, so a link this build cannot read still belongs to the install that wrote it.
 		zoteroLinks: stored?.zoteroLinks ?? {},
+		// Carried whole for the same reason -- but only a map: a rename spreads it, and a string would
+		// spread into characters.
+		vaultSends: typeof stored?.vaultSends === "object" && stored.vaultSends !== null && !Array.isArray(stored.vaultSends) ? stored.vaultSends : {},
 		tagFolderMap: stored?.tagFolderMap ?? {},
 		// A copy, not the constant. `onVaultRename` writes into `data.syncIndex.rows` in place, so
 		// handing a fresh install EMPTY_SYNC_INDEX itself means the next one starts with the last one's

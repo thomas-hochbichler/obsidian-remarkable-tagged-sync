@@ -68,10 +68,10 @@
 
     - id: C13.8
       scenario: A note is renamed while a sync is running
-      expect: "Ignored. A sync moves notes itself and replaces the whole index when it ends, so reacting mid-run only persists a state that is about to be overwritten"
+      expect: "The rows are left alone. A sync moves notes itself and replaces the whole index when it ends, so reacting mid-run only persists a state that is about to be overwritten (the record of vault sends follows all the same, C13.31)"
       layer: vault
       file: src/vault-rename.test.ts
-      test: "what a rename does not do > ignores renames while a sync is running"
+      test: "what a rename does not do > leaves the rows alone while a sync is running"
 
     - id: C13.9
       scenario: A note is renamed after that sync has finished
@@ -212,3 +212,31 @@
       layer: unit
       file: src/note-rename.test.ts
       test: "remapRows > lets two rows end up naming one file"
+
+    - id: C13.29
+      scenario: The user renames a file the vault sent to the tablet
+      expect: The record of that send names the new path (send spec §5), and data.json is written once
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a file the vault sent > follows the origin, and writes data.json once"
+
+    - id: C13.30
+      scenario: A folder holding a sent file and the note that came back from it is moved
+      expect: The origin and the note's row both follow, in one write of data.json
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a file the vault sent > follows a folder move with one write, the origin and a synced note's row together"
+
+    - id: C13.31
+      scenario: A sent file is renamed while a sync is running
+      expect: "The origin follows anyway, and after the sync has saved the record holds the new path and the run's listing stamp both (send spec §12 F3). Unlike the rows (C13.8), the sync never replaces this record with a copy of its own"
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a file the vault sent > follows the origin while a sync is running, and it is still followed after the sync has saved (F3)"
+
+    - id: C13.32
+      scenario: A send is recorded while a sync is running
+      expect: Both sends are in the record the sync saves at its end (F3)
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a file the vault sent > keeps a send recorded while a sync is running (F3)"

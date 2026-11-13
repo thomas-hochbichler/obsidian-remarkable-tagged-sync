@@ -8,6 +8,9 @@
 # V3 is the note before the print: rendered by Obsidian, then dressed -- the markup passes on markup
 # the renderer really emitted (test-fixtures/rendered-notes/), the measuring passes on a layout set
 # by hand. Whether a real note prints like the prototype's round 9 is again a script's question.
+# V4 is the record of what the vault sent (data.json `vaultSends`): read entry by entry, aged by the
+# sync's listings, following its origins through renames. Its loading is in A8, the rename handler
+# that drives it in C13.
 
 
 - feature: V1
@@ -565,3 +568,275 @@
       layer: unit
       file: src/note-document.test.ts
       test: "obsidianRenderHost > sleeps on the active window's timers and tells the time"
+
+
+- feature: V4
+  name: The record of a send -- which tablet documents the vault sent, and from which file
+  code: src/vault-sends.ts
+  tier: free
+  scenarios:
+    - id: V4.1
+      scenario: A send with every field of spec §5 is written and read back
+      expect: Exactly what was stored
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > reads back exactly what was stored, every field of spec §5"
+
+    - id: V4.2
+      scenario: Nothing is stored for the document
+      expect: Null, never a throw
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for nothing stored"
+
+    - id: V4.3
+      scenario: The entry is a string
+      expect: No send is read, and nothing throws
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for a string"
+
+    - id: V4.4
+      scenario: The entry is an array
+      expect: No send is read, and nothing throws
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for an array"
+
+    - id: V4.5
+      scenario: The entry is null
+      expect: No send is read, and nothing throws
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for null"
+
+    - id: V4.6
+      scenario: The entry has no origin
+      expect: Null -- origin, kind and send time are what make an entry a send
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for an entry without an origin"
+
+    - id: V4.7
+      scenario: The entry names a kind this build does not send, written by a newer one
+      expect: Null, and the entry stays in the map
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for a kind this build does not know"
+
+    - id: V4.8
+      scenario: The send time does not parse
+      expect: Null -- a time nobody can compare decides no lifetime
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for a send time that is no time"
+
+    - id: V4.9
+      scenario: An entry's name or folder id is unreadable
+      expect: Read without them, so the "untouched" test of spec §3 cannot pass and the copy counts as the user's -- the safe side
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > reads an entry that lost its name or folder, without them -- the copy then counts as the user's"
+
+    - id: V4.10
+      scenario: The promoted-tag list holds things that are not strings
+      expect: Only the strings are read
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > keeps only the strings of a promoted-tag list"
+
+    - id: V4.11
+      scenario: Is a document covered by the record
+      expect: Yes for a document the vault sent, no for any other -- the one test behind "is this copy ours" and "one note for the whole document"
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > covers a document the vault sent, and no other"
+
+    - id: V4.12
+      scenario: The document's entry was written by an install this build cannot read
+      expect: Covered all the same. Read as a stranger, one document would give page notes on this machine and one note on the other
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > covers a document whose entry this build cannot read"
+
+    - id: V4.13
+      scenario: A document id that is a key of Object's prototype
+      expect: Not covered -- only the map's own entries count
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > does not take a key of the map's prototype for an entry"
+
+    - id: V4.14
+      scenario: The record holds two copies of one origin, one of another, and an unreadable entry naming the same path
+      expect: The two copies, oldest first; nothing else
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > finds every earlier copy of one origin, oldest first, and nothing of another"
+
+    - id: V4.15
+      scenario: An entry carries a field a newer build wrote, and this build writes the entry
+      expect: The unknown field survives the write
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "writing a send > carries the fields a newer build wrote on the same entry"
+
+    - id: V4.16
+      scenario: Another entry is written beside one this build cannot read
+      expect: The unreadable entry stays exactly as it was
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "writing a send > leaves an entry it cannot read where it is when another is written"
+
+    - id: V4.17
+      scenario: A send is written
+      expect: A new map; the one handed in is untouched
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "writing a send > does not write through the map it was given"
+
+    - id: V4.18
+      scenario: A sync's listing finds a sent document
+      expect: Marked seen
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > marks a listed copy seen"
+
+    - id: V4.19
+      scenario: A sync's listing misses a document no listing has found yet
+      expect: Neither seen nor gone -- the listing lags the upload (seen live 2026-09-12)
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > leaves a copy no listing has found yet alone -- the listing lags the upload"
+
+    - id: V4.20
+      scenario: A listing misses a document an earlier listing found
+      expect: Marked gone at that time
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > marks a copy gone once a listing misses it after having found it"
+
+    - id: V4.21
+      scenario: A later listing misses a document already marked gone
+      expect: The first miss stays the time it went, so the 30 days are not pushed back
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > keeps the first miss as the time it went"
+
+    - id: V4.22
+      scenario: A document marked gone is listed again
+      expect: The gone mark is taken off and it is seen -- restored from the tablet's trash
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > takes the gone mark off a copy that turns up again -- restored from the trash"
+
+    - id: V4.23
+      scenario: A listing runs over an entry this build cannot read
+      expect: Untouched
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > leaves an entry it cannot read untouched"
+
+    - id: V4.24
+      scenario: No listing has found a sent copy yet, 23 hours and then 24 hours after the send
+      expect: Still on the tablet inside the day's grace, not after it -- the grace a Zotero send gets
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > is still on the tablet a day after the send while no listing has found it, and not after"
+
+    - id: V4.25
+      scenario: A copy was seen long ago, or was marked gone
+      expect: On the tablet while seen, however long ago; not once gone
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > is on the tablet once seen, however long ago, and not once gone"
+
+    - id: V4.26
+      scenario: A gone copy's entry, an hour short of 30 days later
+      expect: Kept, so a copy restored from the trash inside the month is still the vault's own (§11 P5)
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > keeps a gone copy for 30 days, so one restored from the trash is still the vault's own"
+
+    - id: V4.27
+      scenario: A gone copy's entry, 30 days after it went
+      expect: Dropped
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > drops it 30 days after it went"
+
+    - id: V4.28
+      scenario: A copy still listed, a year after its send
+      expect: Kept -- only absence ages an entry
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > keeps a copy that is still on the tablet, however old its send"
+
+    - id: V4.29
+      scenario: A copy no listing ever found, short of and at 30 days after the send
+      expect: Kept, then dropped. It never earns a gone mark, so its age is counted from the send
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > drops a copy no listing ever found 30 days after its send -- it never earns a gone mark"
+
+    - id: V4.30
+      scenario: An unreadable entry carries old dates
+      expect: Never dropped -- it has no date this build can trust
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > never drops an entry it cannot read -- it has no date to trust"
+
+    - id: V4.31
+      scenario: The origin is renamed
+      expect: The entry names the new path
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > follows a renamed origin"
+
+    - id: V4.32
+      scenario: A folder with two origins below it, one nested, is renamed; a sibling folder's name starts the same
+      expect: Both origins below it follow; the sibling's does not
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > follows every origin below a renamed folder, and only those"
+
+    - id: V4.33
+      scenario: Some other file is renamed
+      expect: Null, which is how the caller learns not to write data.json
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > answers null for a rename of something else"
+
+    - id: V4.34
+      scenario: An entry this build cannot otherwise read names an origin under a renamed folder
+      expect: Its origin follows and the rest of it stays -- whichever install reads it later finds the path current
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > moves the origin of an entry it cannot otherwise read, and keeps the rest of it"
+
+    - id: V4.35
+      scenario: A rename meets an entry that is no record at all
+      expect: Left exactly as it was
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > leaves an entry without an origin where it is"
+
+    - id: V4.36
+      scenario: A sync hands back marks for a document whose origin was renamed meanwhile
+      expect: The marks are set on the live entry; the new origin and unknown fields stay
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync hands back (spec §5) > sets the marks on the live entry and keeps everything else on it"
+
+    - id: V4.37
+      scenario: A send was recorded while the sync ran
+      expect: It is still in the map after the marks are applied
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync hands back (spec §5) > keeps a send recorded while the sync ran"
+
+    - id: V4.38
+      scenario: A sync hands back marks for a document that has no entry by then
+      expect: No entry is made -- marks describe a send, they do not make one
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync hands back (spec §5) > makes no entry for a document that has none by then"
