@@ -19,9 +19,20 @@ the person using it lives in [README.md](README.md).
   attachment, in the personal library or in a group library the vault has switched on. The link
   is by attachment key *and* library and lives in `data.json`; nothing is written into the
   document's name on the tablet, so renaming it there costs nothing.
-- **Send** — the Obsidian command that puts a Zotero PDF onto the tablet, already tagged for sync.
-  Send only ever *adds* a file: nothing on the tablet is changed, deleted, moved, renamed or
-  re-tagged, and a second Send never overwrites the first.
+- **Send** — putting a PDF onto the tablet from Obsidian. It happens only when you run it, and the
+  document arrives without a sync tag: you tag it on the tablet when you want it back. There are
+  two kinds. A **Zotero send** puts a paper's PDF there; a **vault send** puts a file from the
+  vault there — a PDF as it is, a note printed as a PDF in the tablet's page format. Send *adds* a
+  document: nothing on the tablet that the plugin did not put there itself is changed, deleted,
+  moved, renamed or re-tagged. A second Zotero send never overwrites the first. A second vault send
+  replaces the plugin's own earlier copy of that file while nobody has touched it; a copy you have
+  touched — ink, a tag, a new name, a move — is yours and stays unless you say otherwise. What a vault send put there comes back as one note for the
+  whole document, whether you tag the document or only pages of it. Not *export* or *print* (those
+  leave a file on this computer), and not *Readwise push*.
+- **Origin** — the vault file a vault send started from: the note that was printed, or the PDF that
+  went up as it is. The note that comes back from the sent document names its origin and links to
+  it; nothing is ever written into the origin itself. Not *source*: the *source PDF* is the PDF on
+  the tablet — for a printed note that is the printout, not the note.
 - **Added page** — a page inserted into a PDF on the tablet. It is part of the document but not of
   the source PDF, so it has no page number there and nothing on it sits at a place in the source.
   A separate notebook is not an added page, whatever it was written about.
