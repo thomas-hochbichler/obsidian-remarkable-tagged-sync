@@ -10,13 +10,13 @@
  * here as well would be two copies of one paragraph.
  */
 
-import { namesInCloudFolder, sendToCloud } from "./cloud-send";
+import { lookAtEarlierCopies, moveCopyToTrash, namesInCloudFolder, sendToCloud } from "./cloud-send";
 import { isOfflineError } from "./explain-error";
 import type { RemarkableAuth } from "./remarkable-auth";
 import { openSession } from "./remarkable-session";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import type { Transport, TransportSession, TransportStatus } from "./transport";
-import type { SendDocument, SendTransport } from "./zotero-send";
+import type { CopyRef, EarlierCopy, EarlierCopyLook, SendDocument, SendTransport } from "./zotero-send";
 
 export const CLOUD_TRANSPORT_LABEL = "reMarkable's cloud";
 
@@ -46,12 +46,22 @@ export class CloudTransport implements Transport, SendTransport {
 	 * out: that one is a {@link SyncApi}, six read methods, and widening it so a send could borrow it
 	 * would put `putPdf` within reach of the sync engine -- which must never write anything at all.
 	 */
-	async putPdf(document: SendDocument): Promise<{ docId: string }> {
+	async putPdf(document: SendDocument): Promise<{ docId: string; folderId: string }> {
 		return await sendToCloud(openSession(await this.auth.session()), document);
 	}
 
 	async namesIn(folder: string): Promise<string[]> {
 		return await namesInCloudFolder(openSession(await this.auth.session()), folder);
+	}
+
+	/** A vault send's look at its earlier copies (send spec §3); a session of its own, like the two above. */
+	async earlierCopies(copies: readonly EarlierCopy[], folder: string, visibleName: string): Promise<EarlierCopyLook> {
+		return await lookAtEarlierCopies(openSession(await this.auth.session()), copies, folder, visibleName);
+	}
+
+	/** A vault send's clearing of one earlier copy (ADR 0001): to the trash, and only there. */
+	async moveToTrash(ref: CopyRef): Promise<boolean> {
+		return await moveCopyToTrash(openSession(await this.auth.session()), ref);
 	}
 
 	explainError(): string | null {

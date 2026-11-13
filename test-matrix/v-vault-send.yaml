@@ -11,6 +11,10 @@
 # V4 is the record of what the vault sent (data.json `vaultSends`): read entry by entry, aged by the
 # sync's listings, following its origins through renames. Its loading is in A8, the rename handler
 # that drives it in C13.
+# V5 is what the transports do for a second send: the look at the earlier copies and the move to the
+# trash, against a fake cloud that has only the members the send may call. The cloud transport's
+# own sessions for both are in A9; whether rmapi-js really refuses a changed copy is checked once
+# live (ticket 20).
 
 
 - feature: V1
@@ -840,3 +844,214 @@
       layer: unit
       file: src/vault-sends.test.ts
       test: "what a sync hands back (spec §5) > makes no entry for a document that has none by then"
+
+
+- feature: V5
+  name: A second send -- what the earlier copy is now, and the trash
+  code: src/cloud-send.ts
+  tier: free
+  scenarios:
+    - id: V5.1
+      scenario: An upload goes into a folder that was there, and into one it made
+      expect: The answer names that folder's id either way -- the record keeps it, and a copy is untouched only while it is still in it
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "the cloud's Zotero folder > is named in the answer, whether it was there or made"
+
+    - id: V5.2
+      scenario: The earlier copy is listed where and as what it was sent, unpinned, with no tag, no page tag and no .rm file
+      expect: Untouched, with the listing's id and hash; exactly one listing, one getContent and one getEntries were made
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is untouched where the listing, the page tags and the files all say nobody was there"
+
+    - id: V5.3
+      scenario: The listing does not show the copy -- sent a minute ago, or deleted on the tablet
+      expect: Gone, and nothing but the listing was asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is gone when the listing does not show it"
+
+    - id: V5.4
+      scenario: One copy is in the trash, another in a folder that is
+      expect: Both gone, nothing but the listing asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is gone when it is in the trash, or in a folder that is"
+
+    - id: V5.5
+      scenario: The copy was moved to another folder
+      expect: The user's, and no getContent or getEntries -- the listing already said so
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when moved to another folder, and the tablet is not asked anything more"
+
+    - id: V5.6
+      scenario: The copy was moved to the top level
+      expect: The user's, and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when moved to the top level, and the tablet is not asked anything more"
+
+    - id: V5.7
+      scenario: The copy was renamed on the tablet
+      expect: The user's (P16), and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when renamed (P16), and the tablet is not asked anything more"
+
+    - id: V5.8
+      scenario: The copy was pinned
+      expect: The user's (P16), and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when pinned (P16), and the tablet is not asked anything more"
+
+    - id: V5.9
+      scenario: The document carries a tag, mapped to a folder or not
+      expect: The user's -- a tag is something the user did -- and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when tagged, mapped or not, and the tablet is not asked anything more"
+
+    - id: V5.10
+      scenario: The document's tags come in the legacy shape, plain strings
+      expect: The user's all the same
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when tagged in the legacy shape, and the tablet is not asked anything more"
+
+    - id: V5.11
+      scenario: Only a page carries a tag
+      expect: The user's after one getContent; the file list is not asked for
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when a page carries a tag, which costs no file list"
+
+    - id: V5.28
+      scenario: The copy's .content has no page-tag list
+      expect: No page tag -- untouched, the other tests passing
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > reads no page-tag list as no page tag"
+
+    - id: V5.29
+      scenario: The copy's .content has a null page-tag list
+      expect: No page tag, the same
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > reads a null page-tag list as no page tag"
+
+    - id: V5.12
+      scenario: A page has an .rm file -- ink, a highlight, or ink erased again
+      expect: The user's. Erased ink cannot be told from ink, and the error falls on the side of asking
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when any page has an .rm file, erased ink included"
+
+    - id: V5.13
+      scenario: The record's entry has no folder id
+      expect: The user's, nothing more asked -- nothing can vouch for a copy whose place is unknown
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when the record lost its folder, and the tablet is not asked anything more"
+
+    - id: V5.14
+      scenario: The record's entry has no name
+      expect: The user's, nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when the record lost its name, and the tablet is not asked anything more"
+
+    - id: V5.15
+      scenario: Three earlier copies -- one gone, one untouched, one renamed
+      expect: One listing for all of them, answered in the order asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is looked at in one listing for several copies, answered in the order asked"
+
+    - id: V5.16
+      scenario: The send folder holds a document of the new one's name that the vault did not send from this origin
+      expect: Reported as a stranger, never classed, never looked into -- the new one lands beside it
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is reported and never classed or looked into"
+
+    - id: V5.17
+      scenario: The only same-named document in the folder is this origin's own copy, pinned
+      expect: No stranger -- an earlier copy is never one, whatever its state
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is never one of this origin's own copies, whatever state they are in"
+
+    - id: V5.18
+      scenario: Same-named documents sit in another folder, in a second folder of the send folder's name, in the trash, and in an account without the folder
+      expect: No stranger in any of them -- only the folder the new one goes into counts
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is looked for only in the folder the new one goes into"
+
+    - id: V5.19
+      scenario: The listing throws
+      expect: The whole look rejects; the send (16) goes on and clears nothing (P17)
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a look that fails (send spec §3, P17) > rejects as a whole when listItems throws"
+
+    - id: V5.20
+      scenario: getContent throws
+      expect: The whole look rejects -- never one copy classed and another not
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a look that fails (send spec §3, P17) > rejects as a whole when getContent throws"
+
+    - id: V5.21
+      scenario: getEntries throws
+      expect: The whole look rejects
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a look that fails (send spec §3, P17) > rejects as a whole when getEntries throws"
+
+    - id: V5.22
+      scenario: An untouched copy is cleared
+      expect: One delete with the look's id and hash, the copy's parent is the trash, nothing else called -- no move, no purge
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "moving an earlier copy to the tablet's trash (ADR 0001) > moves exactly the copy the look listed, by its id and hash, and calls nothing else"
+
+    - id: V5.23
+      scenario: The copy changed between the look and the clearing, so rmapi-js answers HashNotFoundError (F11, against the fake)
+      expect: Not cleared, and the copy is where it was with its new hash
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "moving an earlier copy to the tablet's trash (ADR 0001) > leaves a copy that changed since the look where it is, and says it was not cleared"
+
+    - id: V5.24
+      scenario: The move fails for another reason
+      expect: The error reaches the caller unchanged
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "moving an earlier copy to the tablet's trash (ADR 0001) > hands every other failure to the caller unchanged"
+
+    - id: V5.25
+      scenario: Somebody adds a member to the cloud send's API type -- a move, a purge, a rename
+      expect: The type check fails; the type is the upload's three calls, getContent, raw.getEntries and delete, and nothing more
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what a send may ask of the cloud > is the upload's three calls, the look's two reads and the trash, and nothing more"
+
+    - id: V5.26
+      scenario: A send over SSH goes into a folder that was there, and into one it made
+      expect: The answer names that folder's id, as over the cloud
+      tier: pro
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: "putting a PDF on the tablet > names the folder it put the document into, whether it was there or made"
+
+    - id: V5.27
+      scenario: The SSH transport is asked what it can do for a second send
+      expect: Neither a look nor a trash -- over SSH a vault send only adds (05 #12)
+      tier: pro
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "sending a PDF over SSH > has no look at earlier copies and no trash"

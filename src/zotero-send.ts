@@ -1,11 +1,14 @@
 /**
  * Putting a Zotero PDF on the tablet: spec §2.4 and §2.5.
  *
- * The whole of what this may do is {@link SendTransport}, and it has **one method that writes**
- * (the other one reads names). That is the promise of §1.2 written as a type rather than as a
- * comment: there is no update here, no delete, no move and no rename, so no version of this code
- * can take something off the user's tablet or change a document that is already on it. A transport
- * that grows a second writing method is a change somebody has to make on purpose.
+ * The whole of what a send may do is {@link SendTransport}, and the promise of §1.2 is written there
+ * as a type rather than as a comment: there is no update, no rename, no move except into the
+ * tablet's trash and no delete for good, so nothing a send does can change a document in place or
+ * take one off the tablet past restoring. It has **two methods that write**. `putPdf` adds. `moveToTrash` (ADR 0001)
+ * moves one document to the tablet's trash, where the tablet can restore it, and only a vault send
+ * calls it -- only for a document this vault's own record says it sent, and one the user has
+ * touched only on their say-so. A Zotero send stays add-only, and nothing here calls it. A transport
+ * that grows a third writing method is a change somebody has to make on purpose.
  *
  * Everything else in this file is arithmetic over what is already known -- what to call the document,
  * which tag it gets, whether it is there already -- so the policy of §2.4 is testable without a
@@ -16,7 +19,7 @@ import { md5Hex } from "./file-md5";
 import { sameLibrary, type ZoteroAttachment, type ZoteroClient, type ZoteroItem } from "./zotero-client";
 import { linkFor, withLink, withoutLink, type StoredZoteroLinks, type ZoteroLink } from "./zotero-links";
 
-/** One document, as it is handed to a transport. Add-only: see the file header. */
+/** One document, as it is handed to a transport to add. See the file header for what else a transport may do. */
 export interface SendDocument {
 	/** What the tablet shows in *My files*. See {@link tabletName}. */
 	readonly visibleName: string;
@@ -28,11 +31,55 @@ export interface SendDocument {
 	// on the tablet; the reader tags it there when they want it back, like every other document.
 }
 
+/** One earlier copy of a vault send, as the vault's record has it (send spec §5) -- what the look compares the tablet against. */
+export interface EarlierCopy {
+	readonly docId: string;
+	/** The name it was sent as. Absent: the copy counts as the user's. */
+	readonly name?: string;
+	/** The folder it was put into. Absent the same way. */
+	readonly folderId?: string;
+}
+
+/** A listed copy's `{id, hash}`, as the look saw it -- what {@link SendTransport.moveToTrash} is handed. */
+export interface CopyRef {
+	readonly id: string;
+	readonly hash: string;
+}
+
+/**
+ * What one earlier copy is now (send spec §3). `gone`: not listed, or in the trash. `untouched`:
+ * where and what it was sent as, no pin, no tag, no ink. `users`: anything else.
+ */
+export type EarlierCopyState =
+	| { readonly docId: string; readonly state: "gone" }
+	| { readonly docId: string; readonly state: "untouched" | "users"; readonly ref: CopyRef };
+
+export interface EarlierCopyLook {
+	/** One per copy asked about, in the order asked. */
+	readonly copies: readonly EarlierCopyState[];
+	/** The send folder holds a document of the new one's name that is none of these copies: it is never touched, and the new one lands beside it. */
+	readonly strangerNamed: boolean;
+}
+
 export interface SendTransport {
 	/** Names this route in the send dialog and in a failure: "reMarkable's cloud" / "your reMarkable". */
 	readonly label: string;
-	/** Adds one PDF and answers with the id the tablet gave it. The one method that writes, on purpose. */
-	putPdf(document: SendDocument): Promise<{ docId: string }>;
+	/**
+	 * Adds one PDF and answers with the id the tablet gave it and the id of the folder it went into.
+	 * The method that adds, on purpose; a Zotero send ignores the folder.
+	 */
+	putPdf(document: SendDocument): Promise<{ docId: string; folderId: string }>;
+	/**
+	 * What the vault's earlier copies of one origin are now, and whether the send folder holds a
+	 * stranger of the same name (send spec §3). Read, never written. Rejects as a whole when any part
+	 * of the look fails. The cloud only: over SSH nothing is inspected (05 #12).
+	 */
+	earlierCopies?(copies: readonly EarlierCopy[], folder: string, visibleName: string): Promise<EarlierCopyLook>;
+	/**
+	 * Moves one earlier copy to the tablet's trash -- never anywhere else, never for good (ADR 0001).
+	 * `false` when the copy changed since the look and so was left where it is. The cloud only.
+	 */
+	moveToTrash?(ref: CopyRef): Promise<boolean>;
 	/**
 	 * What the tablet calls the documents in that top-level folder right now; `[]` where there is no
 	 * such folder. Read, never written: the second vault's question (2026-09-18, found in the live

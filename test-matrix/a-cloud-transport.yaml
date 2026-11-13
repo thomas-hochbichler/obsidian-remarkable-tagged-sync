@@ -341,3 +341,17 @@
       layer: unit
       file: src/transport.test.ts
       test: "explainTransportError > falls through to the neutral wording for an error the transport does not claim"
+
+    - id: A9.9
+      scenario: A vault send looks at its earlier copies through the cloud transport
+      expect: Through a session of its own, never the engine's read-only one; the copy comes back classed with the listing's ref
+      layer: unit
+      file: src/transport.test.ts
+      test: "sending a PDF through the cloud > looks at a vault send's earlier copies through a session of its own"
+
+    - id: A9.10
+      scenario: A vault send clears an earlier copy through the cloud transport
+      expect: Through a session of its own; the move answers that it went
+      layer: unit
+      file: src/transport.test.ts
+      test: "sending a PDF through the cloud > moves an earlier copy to the trash through a session of its own, too"

@@ -119,7 +119,7 @@ export class SshTransport implements Transport, SendTransport {
 	 * {@link SyncApi}. Writing needs the connection itself, which is the one thing this class already
 	 * holds and nothing else may.
 	 */
-	async putPdf(document: SendDocument): Promise<{ docId: string }> {
+	async putPdf(document: SendDocument): Promise<{ docId: string; folderId: string }> {
 		const connection = await this.connect(this.store.settings());
 		try {
 			return await sendOverSsh(connection, document);

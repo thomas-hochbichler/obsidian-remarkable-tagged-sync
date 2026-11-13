@@ -129,6 +129,15 @@ describe("putting a PDF on the tablet", () => {
 		});
 	});
 
+	// A vault send records the folder (send spec §5), over SSH as over the cloud.
+	it("names the folder it put the document into, whether it was there or made", async () => {
+		const there = device({ [`${FOLDER_ID}.metadata`]: json({ type: "CollectionType", visibleName: "Zotero", parent: "" }) });
+		expect(await sendOverSsh(there.target, document, there.newId)).toEqual({ docId: "id-1", folderId: FOLDER_ID });
+
+		const made = device();
+		expect(await sendOverSsh(made.target, document, made.newId)).toEqual({ docId: "id-2", folderId: "id-1" });
+	});
+
 	// No tag (2026-09-13): the reader tags the document on the tablet when they want it back, and
 	// `.content` carries the empty list xochitl writes for an untagged document.
 	it("carries no tag, in the shape a cloud upload has", async () => {

@@ -57,7 +57,7 @@ function route(label: string, sent: SendDocument[], onTablet: string[] = []): Se
 		namesIn: async () => onTablet,
 		putPdf: async (document) => {
 			sent.push(document);
-			return { docId: `doc-${sent.length}` };
+			return { docId: `doc-${sent.length}`, folderId: "folder-1" };
 		},
 	};
 }
@@ -345,7 +345,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 			putPdf: async (document) => {
 				if (document.visibleName === "Prompting") throw new Error("generation mismatch");
 				sent.push(document);
-				return { docId: "doc-ok" };
+				return { docId: "doc-ok", folderId: "folder-1" };
 			},
 		};
 		const h = harness({
