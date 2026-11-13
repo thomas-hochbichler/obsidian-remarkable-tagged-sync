@@ -90,6 +90,9 @@ const FRONTMATTER_BLOCK = "frontmatter";
  */
 const UNPRINTABLE_EMBEDS = ["pdf-embed", "audio-embed", "video-embed", "canvas-embed"];
 
+/** An embed whose target is not in the vault: a missing note, a missing file (read on the renderer's output, ticket 12). */
+const MISSING_TARGETS = ["mod-empty", "mod-empty-attachment"];
+
 /**
  * Passes 1–4 of spec §4.3, on the element the renderer filled: the title, embeds that cannot be
  * printed, internal links, captions. Markup only -- nothing here reads layout.
@@ -115,13 +118,16 @@ function addTitle(view: HTMLElement, title: string): void {
 }
 
 /**
- * Pass 2. A PDF, audio, video or canvas embed becomes one small line naming its file (06 #6). An
- * embed whose target does not exist keeps the box Obsidian draws for it: that box already says so.
+ * Pass 2. A PDF, audio, video or canvas embed becomes one small line naming its file (06 #6). So
+ * does an embed whose target does not exist, said as `(not found)`: Obsidian's own box for it holds a
+ * sentence of its UI in the app's language -- "… Klicken zum Erstellen" -- that offers a click the
+ * paper cannot take.
  */
 function replaceUnprintableEmbeds(view: HTMLElement): void {
 	for (const embed of Array.from(view.querySelectorAll(".internal-embed"))) {
-		if (!UNPRINTABLE_EMBEDS.some((kind) => embed.classList.contains(kind))) continue;
-		embed.replaceWith(createSpan({ cls: MISSING_EMBED_CLASS, text: `${embedFileName(embed)} (not included)` }));
+		const missing = MISSING_TARGETS.some((kind) => embed.classList.contains(kind));
+		if (!missing && !UNPRINTABLE_EMBEDS.some((kind) => embed.classList.contains(kind))) continue;
+		embed.replaceWith(createSpan({ cls: MISSING_EMBED_CLASS, text: `${embedFileName(embed)} (${missing ? "not found" : "not included"})` }));
 	}
 }
 

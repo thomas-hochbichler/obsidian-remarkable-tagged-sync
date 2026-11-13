@@ -293,7 +293,7 @@ describe("dressNote", () => {
 
 		dress(view, "Case Embeds");
 
-		expect(texts(view.querySelectorAll(`.${MISSING_EMBED_CLASS}`))).toEqual([
+		expect(texts(view.querySelectorAll(`.${MISSING_EMBED_CLASS}`)).filter((line) => line.endsWith("(not included)"))).toEqual([
 			"case-doc.pdf (not included)",
 			"case-doc.pdf (not included)",
 			"case-sound.mp3 (not included)",
@@ -301,18 +301,19 @@ describe("dressNote", () => {
 			"case-board.canvas (not included)",
 		]);
 		expect(view.querySelectorAll(".pdf-embed, .audio-embed, .video-embed, .canvas-embed, audio, video")).toEqual([]);
-		expect(view.querySelectorAll(`p span.${MISSING_EMBED_CLASS}`)).toHaveLength(5);
+		// Five, and the two missing targets of the next test: each line sits in its embed's paragraph.
+		expect(view.querySelectorAll(`p span.${MISSING_EMBED_CLASS}`)).toHaveLength(7);
 	});
 
-	it("keeps the box Obsidian draws for an embed whose target does not exist, and every image and embedded note", () => {
+	it("says 'not found' for an embed whose target does not exist, and keeps every image and embedded note", () => {
+		// Obsidian's own box says "… Klicken zum Erstellen" in the app's language: a click the paper
+		// cannot take.
 		const view = rendered("embeds");
 
 		dress(view, "Case Embeds");
 
-		expect(texts(view.querySelectorAll(".file-embed"))).toEqual([
-			'"Missing note" ist noch nicht erstellt. Klicken zum Erstellen.',
-			"“missing-file.pdf” konnte nicht gefunden werden.",
-		]);
+		expect(view.querySelectorAll(".file-embed")).toEqual([]);
+		expect(texts(view.querySelectorAll(`.${MISSING_EMBED_CLASS}`)).filter((line) => line.endsWith("(not found)"))).toEqual(["Missing note (not found)", "missing-file.pdf (not found)"]);
 		expect(view.querySelectorAll(".image-embed img")).toHaveLength(3);
 		expect(view.querySelectorAll(".markdown-embed table")).toHaveLength(2);
 	});

@@ -382,10 +382,10 @@
 
     - id: V3.8
       scenario: An embed whose target is missing, an image, an embedded note
-      expect: The missing one keeps the box Obsidian draws (it says so already); images and embedded notes print
+      expect: "The missing note and the missing file each become one line, `<name> (not found)` -- Obsidian's own box would print its UI sentence \"… Klicken zum Erstellen\", a click the paper cannot take; images and embedded notes print"
       layer: unit
       file: src/note-document.test.ts
-      test: "dressNote > keeps the box Obsidian draws for an embed whose target does not exist, and every image and embedded note"
+      test: "dressNote > says 'not found' for an embed whose target does not exist, and keeps every image and embedded note"
 
     - id: V3.9
       scenario: A PDF in a subfolder, embedded inside an embedded note
