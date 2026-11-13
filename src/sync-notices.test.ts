@@ -133,6 +133,16 @@ describe("partialOutcomeNotices", () => {
 		expect(notices[0].timeout).toBe(LONG_NOTICE_MS);
 	});
 
+	// Send spec §6.5: said once per sent copy, so each is worth the full time -- and after Zotero's, as
+	// both speak of one document and both say what to do.
+	it("raises what the sync says about a document the vault sent, after the Zotero half", () => {
+		const vaultSendNotices = ['"Login-Spec" has marks on it but no sync tag, so nothing came back. Tag it, or any page of it, with "sync" on the tablet.'];
+		const notices = partialOutcomeNotices({ ...NOTHING_SKIPPED, zoteroNotices: ["Zotero: a"], vaultSendNotices, editedNotesSkipped: 1 });
+
+		expect(notices.map((notice) => notice.message.slice(0, 16))).toEqual(["Zotero: a", '"Login-Spec" has', "1 note was not u"]);
+		expect(notices[1].timeout).toBe(LONG_NOTICE_MS);
+	});
+
 	it("leaves out the ones that did not happen", () => {
 		expect(partialOutcomeNotices({ ...NOTHING_SKIPPED, shrunkNotes: 2 })).toHaveLength(1);
 	});

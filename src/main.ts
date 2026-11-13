@@ -81,6 +81,7 @@ import {
 	LONG_NOTICE_MS,
 	outcomeNotice,
 	partialOutcomeNotices,
+	vaultSendNoticeTexts,
 	type PartialOutcome,
 	modelNotReadyNotice,
 	platformGapNotice,
@@ -881,6 +882,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Both of these used to be console-only while the notice still reported plain success. A
 			// stopped run's skips and failures are just as real as a completed one's.
 			if (speak) this.reportPartialOutcomes(result);
+			// Once per sent copy, and already marked said: a background run says these too (send spec §6.5).
+			else for (const notice of vaultSendNoticeTexts(result.vaultSendNotices ?? [])) new Notice(notice.message, notice.timeout);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");

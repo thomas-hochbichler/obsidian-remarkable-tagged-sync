@@ -45,7 +45,7 @@ import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 import { readsNothing } from "./vision-ocr-backend";
 import { newerScreen, type ScreenSeen, screenDeclaredBy } from "./vault-send-settings";
-import { isCovered, sendFor, type StoredVaultSends, type SyncMarks } from "./vault-sends";
+import { isCovered, noTagNotice, sendFor, type StoredVaultSends, type SyncMarks, unreadNotice } from "./vault-sends";
 import { formatLocalDate } from "./zotero-note";
 
 export type SyncRowStatus = "active" | "orphaned";
@@ -478,6 +478,12 @@ export interface SyncResult {
 	 * and diagnostics nobody opens is not where that gets noticed.
 	 */
 	zoteroNotices: string[];
+	/**
+	 * The two sentences the sync says about a document the vault sent (send spec §6.5): marks on it but
+	 * no sync tag, and handwriting left unread. Each once per sent copy -- `sendMarks` carries the flag
+	 * that keeps it from coming back -- and shown with the end-of-sync notices, like `zoteroNotices`.
+	 */
+	vaultSendNotices: string[];
 	/**
 	 * The screen the newest document this run rendered declared, or `null` when none did (send spec §7).
 	 * Newest by the document's `lastModified`, never the last rendered: the run walks the listing's order,
@@ -2271,7 +2277,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt, deps.manual ?? false);
 	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [], screenSeen: null, sendMarks: {} };
+		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [], vaultSendNotices: [], screenSeen: null, sendMarks: {} };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -2326,6 +2332,38 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const before = sendFor(sends, docId)?.promotedTags ?? [];
 		if (before.length !== promoted.length || promoted.some((tag) => !before.includes(tag))) sendMarks[docId] = { ...sendMarks[docId], promotedTags: promoted };
 	};
+	const vaultSendNotices: string[] = [];
+	/**
+	 * "Marks on it but no sync tag" (send spec §6.5), for a sent copy no mapped tag reaches. The listing
+	 * does not say whether a document has ink, so this costs one look at its files -- once per change of
+	 * its hash, and never again once said. A look that fails says nothing and is not remembered, so the
+	 * next sync looks again. An entry this build cannot read has no flags to keep, and is left alone.
+	 * Neither is a copy with any row, orphaned included: a note did come back, only its tag went since.
+	 */
+	const sayNoTag = async (entry: Entry): Promise<void> => {
+		const send = sendFor(sends, entry.id);
+		if (send === null || send.saidNoTag || send.inkCheckedHash === entry.hash) return;
+		if (Object.values(rows).some((row) => row.docId === entry.id)) return;
+		let marked: boolean;
+		try {
+			marked = (await getDocumentFiles(api, entry.id, entry.hash)).pages.size > 0;
+		} catch (error) {
+			skipErrors.push(`failed to look for marks on "${entry.visibleName}": ${errorText(error)}`);
+			return;
+		}
+		sendMarks[entry.id] = { ...sendMarks[entry.id], inkCheckedHash: entry.hash, ...(marked ? { saidNoTag: true as const } : {}) };
+		if (marked) vaultSendNotices.push(noTagNotice(entry.visibleName, tagRouter.tags()));
+	};
+	/**
+	 * "Handwriting not read" (§6.5), once per sent copy however many of its notes were built without it.
+	 * Not for an entry this build cannot read: the flag would go into it and never be read back.
+	 */
+	const sayUnread = (entry: Entry): void => {
+		const send = sendFor(sends, entry.id);
+		if (send === null || send.saidUnread || sendMarks[entry.id]?.saidUnread) return;
+		sendMarks[entry.id] = { ...sendMarks[entry.id], saidUnread: true };
+		vaultSendNotices.push(unreadNotice(entry.visibleName));
+	};
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -2361,6 +2399,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			skipErrors,
 			backendWarnings,
 			zoteroNotices,
+			vaultSendNotices,
 			screenSeen,
 			sendMarks,
 		};
@@ -2411,7 +2450,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// Nothing mapped now, and nothing previously active to potentially orphan -- truly nothing to do.
 		const hasPreviouslyActiveRow = hasRowWithStatus(rows, entry.id, "active");
 		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow) {
-			if (covered) markPromoted(entry.id, []);
+			if (covered) {
+				markPromoted(entry.id, []);
+				await sayNoTag(entry);
+			}
 			continue;
 		}
 
@@ -2561,6 +2603,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				// already says which of the two it lost.
 				skipErrors.push(...build.ocrWarnings.map((warning) => `Digest of ${unit}: ${warning}`));
 				pushUnique(backendWarnings, build.ocrWarnings);
+				// Only ever above zero with *Your notes on PDFs* off: the sender is told what the switch would bring.
+				if (covered && build.unreadHandwriting > 0) sayUnread(entry);
 				// "unavailable" lost notes as surely as "failed" does. It used to keep the old retry, and so
 				// wrote none where there was none: a PDF synced before the downloaded model was ready, or one
 				// whose notes partly failed before the local engine stopped -- `worstOcrStatus` reports that
@@ -2981,7 +3025,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices, screenSeen, sendMarks };
+	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices, vaultSendNotices, screenSeen, sendMarks };
 }
 
 export interface ReTranscribeDeps {

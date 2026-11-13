@@ -15,7 +15,7 @@
 
 import { isEmptyNote } from "./note-document";
 import { PrintFailure, RESTART_SENTENCE } from "./print-surface";
-import { copiesOf, sendFor, type SentKind, type StoredVaultSends, type VaultSend, withSend } from "./vault-sends";
+import { copiesOf, sendFor, type SentKind, type StoredVaultSends, tagNames, type VaultSend, withSend } from "./vault-sends";
 import { type CopyRef, type EarlierCopyLook, safeTabletName, SEND_NEEDS_TRANSPORT, type SendTransport } from "./zotero-send";
 
 /** The file being sent, as much of a `TFile` as a send reads. */
@@ -60,18 +60,10 @@ export const SEND_THIS_FILE_COMMAND = "Send this file to reMarkable";
 export const SEND_TO_REMARKABLE_MENU = "Send to reMarkable";
 export const ANOTHER_SEND_RUNNING = "Another send is still running.";
 const NOTHING_SENT = "Tagged Sync: nothing sent";
-/** At most this many tag names in a hint; more end in `…` (§8.1). */
-const HINT_TAG_NAMES = 3;
 
 /** Only `.md` and `.pdf` are offered a send (§1): a note is printed, a PDF goes as it is. */
 export function isSendable(file: Pick<VaultFile, "extension">): boolean {
 	return file.extension === "md" || file.extension === "pdf";
-}
-
-/** The mapped tags as a hint names them: quoted, at most three, then `…` (§8.1; the sync's §6.5 sentence names them the same way). */
-export function tagNames(tags: readonly string[]): string {
-	const named = tags.slice(0, HINT_TAG_NAMES).map((tag) => `"${tag}"`);
-	return [...named, ...(tags.length > HINT_TAG_NAMES ? ["…"] : [])].join(", ");
 }
 
 /** How to bring the marks back, said after every send (§8.1). */

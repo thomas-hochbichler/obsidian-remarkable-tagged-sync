@@ -480,6 +480,20 @@
       file: src/push-unique.test.ts
       test: "pushUnique > stops at the limit"
 
+    - id: H7.33
+      scenario: A sync ends with a Zotero sentence, a sentence about a document the vault sent (send spec §6.5) and an edited note
+      expect: The vault send's sentence right after Zotero's, as a 15-second notice -- both speak of one document and say what to do
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > raises what the sync says about a document the vault sent, after the Zotero half"
+
+    - id: H7.34
+      scenario: A background run writes a note, skips edited ones, and has a sentence about a document the vault sent
+      expect: '"Synced 1 note(s)." and the vault send''s sentence, nothing else -- it is said once per sent copy and already marked said, so kept quiet it would be lost for good'
+      layer: unit
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > says what it found about a document the vault sent on a background run too, once"
+
 - feature: E15
   name: One-time platform-gap notice
   code: src/sync-notices.ts

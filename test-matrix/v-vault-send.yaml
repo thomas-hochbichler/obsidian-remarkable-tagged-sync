@@ -1775,3 +1775,120 @@
       layer: unit
       file: src/note-builder.test.ts
       test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > is the name a tag moved to another folder carries there"
+
+- feature: V11
+  name: What the sync says once about a sent copy -- marks but no tag, handwriting not read
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V11.1
+      scenario: A sent copy with ink and no mapped tag on it or a page, synced; then synced again after it changed, with the marks applied
+      expect: '"Login-Spec" has marks on it but no sync tag, so nothing came back. Tag it, or any page of it, with "sync" on the tablet. -- once; the run hands back inkCheckedHash and saidNoTag, and the second sync neither says it nor looks at the document''s files'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says once that a sent copy has marks but no tag, and not again at the next sync"
+
+    - id: V11.2
+      scenario: A sent, untagged copy without ink, synced; again with its hash unchanged; again after ink came
+      expect: Nothing said and one look at its files; no look while the hash is the one looked at; the sentence once the hash moved and ink is there
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > looks at a copy without marks once per change of its hash, and says nothing"
+
+    - id: V11.3
+      scenario: The same untagged PDF with ink, not sent by the vault
+      expect: Nothing said, no look at its files
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says nothing of a document the vault did not send"
+
+    - id: V11.4
+      scenario: Two tags mapped
+      expect: The sentence names them as the send's hint does -- one of your sync tags ("sync", "work")
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > names every mapped tag when there are several"
+
+    - id: V11.5
+      scenario: A tagged sent copy with handwriting, Your notes on PDFs off, synced; written again after a change, with the marks applied
+      expect: '"Login-Spec" has handwriting on it that was not read. Switch on "Your notes on PDFs" in the settings to get it as text. -- once; saidUnread handed back; the second write says nothing'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > says once that a sent copy's handwriting was not read, and not again at the next write"
+
+    - id: V11.6
+      scenario: The copy comes back under two mapped tags, two notes
+      expect: The sentence once
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > says it once for a copy that comes back under two tags"
+
+    - id: V11.7
+      scenario: The same copy with Your notes on PDFs on
+      expect: Never said
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > never says it with Your notes on PDFs on"
+
+    - id: V11.8
+      scenario: A tagged PDF with handwriting the vault did not send, switch off
+      expect: Never said
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > never says it of a document the vault did not send"
+
+    - id: V11.9
+      scenario: Switch off, ink only on a page added on the tablet
+      expect: The sentence -- a blank page added for a longer remark is where a reviewer writes one
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > counts ink on a page added on the tablet"
+
+    - id: V11.10
+      scenario: A short word and a stroke shaped like an underline that points at no text, switch off; then the same with the switch on
+      expect: unreadHandwriting 1 -- the word, not the mark-shaped stroke, which has its own warning; 0 with the switch on
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > counts the handwriting it left unread with margin notes off, and not a stray mark"
+
+    - id: V11.11
+      scenario: The look at an untagged sent copy's files fails (HTTP 503); the next sync finds the account changed
+      expect: Nothing said and nothing marked, a line in diagnostics; the next sync looks again and says it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says nothing when the look fails, and looks again at the next sync"
+
+    - id: V11.12
+      scenario: The sentence with no tag mapped
+      expect: How to map one, as the send's hint says it
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "the \"marks but no tag\" sentence (spec §6.5, §8.1) > says how to map one when no tag is mapped"
+
+    - id: V11.13
+      scenario: The sentence with four tags mapped
+      expect: Three names, then `…`, as the send's hint names them
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "the \"marks but no tag\" sentence (spec §6.5, §8.1) > names three tags at most, as the send's hint does"
+
+    - id: V11.14
+      scenario: A sent copy came back as a note, then its tag was taken off and it changed twice
+      expect: Nothing said either time -- "nothing came back" would be false; its row is orphaned, and any row keeps the look away
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says nothing of a copy whose tag was taken off after its note came back"
+
+    - id: V11.15
+      scenario: A tagged sent copy whose record entry this build cannot read, switch off, handwriting on it
+      expect: The note is written and nothing is said -- the flag would go into the entry and never be read back, so the sentence would come at every write
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > never says it of a copy whose record this build cannot read"
+
+    - id: V11.16
+      scenario: Two words of ink on a page added on the tablet, switch off; then on
+      expect: unreadHandwriting 2, then 0
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > counts its ink as handwriting left unread with handwritten notes off"

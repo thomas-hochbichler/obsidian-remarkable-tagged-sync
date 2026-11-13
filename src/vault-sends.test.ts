@@ -5,6 +5,7 @@ import {
 	dropExpired,
 	isCovered,
 	markListedSends,
+	noTagNotice,
 	remapOrigins,
 	SEND_RECORD_LIFETIME_MS,
 	sendFor,
@@ -22,6 +23,21 @@ const DAY = 24 * HOUR;
 const send: VaultSend = { origin: "Specs/Login-Spec.md", kind: "note", sentAt: SENT, name: "Login-Spec", folderId: "folder-obsidian" };
 
 const at = (offsetMs: number) => new Date(Date.parse(SENT) + offsetMs);
+
+// The engine's tests word the sentence with one tag and with two; these are the ends of the range.
+describe('the "marks but no tag" sentence (spec §6.5, §8.1)', () => {
+	it("says how to map one when no tag is mapped", () => {
+		expect(noTagNotice("Login-Spec", [])).toBe(
+			'"Login-Spec" has marks on it but no sync tag, so nothing came back. No tag is mapped for sync yet. Map one in the settings, then tag the document or any page of it.',
+		);
+	});
+
+	it("names three tags at most, as the send's hint does", () => {
+		expect(noTagNotice("Login-Spec", ["a", "b", "c", "d"])).toBe(
+			'"Login-Spec" has marks on it but no sync tag, so nothing came back. Tag it, or any page of it, with one of your sync tags ("a", "b", "c", …) on the tablet.',
+		);
+	});
+});
 
 describe("reading a send", () => {
 	it("reads back exactly what was stored, every field of spec §5", () => {

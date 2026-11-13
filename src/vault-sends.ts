@@ -67,6 +67,32 @@ export interface SyncMarks {
 	readonly promotedTags?: readonly string[];
 }
 
+/** At most this many tag names in a sentence; more end in `…` (§8.1). */
+const NAMED_TAGS = 3;
+
+/** The mapped tags as the send's hint and the sync's sentence name them: quoted, at most three, then `…` (§8.1). */
+export function tagNames(tags: readonly string[]): string {
+	const named = tags.slice(0, NAMED_TAGS).map((tag) => `"${tag}"`);
+	return [...named, ...(tags.length > NAMED_TAGS ? ["…"] : [])].join(", ");
+}
+
+/**
+ * What the sync says once about a sent copy with marks on it and no mapped tag (§6.5): nothing came
+ * back, and which tag would bring it. The tags are the settings' own, named as the send's hint names
+ * them -- with none mapped, as its hint says that too.
+ */
+export function noTagNotice(name: string, tags: readonly string[]): string {
+	const said = `"${name}" has marks on it but no sync tag, so nothing came back.`;
+	if (tags.length === 0) return `${said} No tag is mapped for sync yet. Map one in the settings, then tag the document or any page of it.`;
+	const which = tags.length === 1 ? tagNames(tags) : `one of your sync tags (${tagNames(tags)})`;
+	return `${said} Tag it, or any page of it, with ${which} on the tablet.`;
+}
+
+/** What the sync says once about a sent copy whose handwriting stayed unread because *Your notes on PDFs* is off (§6.5). */
+export function unreadNotice(name: string): string {
+	return `"${name}" has handwriting on it that was not read. Switch on "Your notes on PDFs" in the settings to get it as text.`;
+}
+
 /**
  * How long an entry outlives its document (§11 P5): 30 days after the listing first missed it, or --
  * for a copy no listing ever found -- 30 days after it was sent. A copy restored from the trash

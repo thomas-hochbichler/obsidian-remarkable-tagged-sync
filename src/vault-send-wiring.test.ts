@@ -44,6 +44,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 				shrunkNotes: 0,
 				relaidDocuments: 0,
 				skipErrors: [],
+				vaultSendNotices: [],
 				screenSeen: engine.screenSeen,
 				sendMarks: engine.sendMarks,
 			};

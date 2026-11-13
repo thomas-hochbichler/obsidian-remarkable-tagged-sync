@@ -119,6 +119,14 @@ export interface DigestBuild {
 	 * unless the digest already shows them, and a page the digest kept would then be pointed at twice.
 	 */
 	covered: number[];
+	/**
+	 * The pen strokes that are handwriting and reached the note nowhere, because *Your notes on PDFs*
+	 * is off: what is left after mark matching and does not have a mark's shape, and every stroke on a
+	 * page added on the device. Always 0 with the setting on. What the sync tells the sender of a
+	 * document (send spec §6.5) -- a stroke shaped like a mark is left out, it has its own warning and
+	 * the setting would not make text of it.
+	 */
+	unreadHandwriting: number;
 }
 
 /**
@@ -233,6 +241,8 @@ interface BuildState {
 	 * arrays are shared, a bare boolean or count would be copied and lost.
 	 */
 	ocrRetry: { retryable: boolean; refused: number };
+	/** `DigestBuild.unreadHandwriting`, boxed for the same reason. */
+	unread: { strokes: number };
 }
 
 /**
@@ -799,6 +809,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// typed on a PDF, and leaving it ungated would put the handwriting back in the note as a flat
 	// transcript with the setting off -- the leak ticket 12 closed. Typed text goes with it (issue #247).
 	if (page.appended) {
+		if (!state.deps.marginNotes) state.unread.strokes += ink.length;
 		if (!state.deps.marginNotes || (ink.length === 0 && !hasTypedText(page.scene))) return null;
 		const { entry, unread } = await buildPageTranscript(state, page, ink);
 		// Ahead of page 1 where the caller could not say: a document whose own pages are all gone.
@@ -819,9 +830,10 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// like a mark is the exception worth a line: the reader drew it *at* the text and expects to find
 	// it quoted, and the reasons it missed (drawn too low, struck through, over a patch the text layer
 	// does not cover) are invisible from the note.
-	if (!state.deps.marginNotes && geometry.pageText !== null) {
+	if (!state.deps.marginNotes) {
 		const missed = handwriting.filter((stroke) => readsAsMark(stroke, geometry.frame, geometry.lineHeightPt)).length;
-		if (missed > 0) {
+		state.unread.strokes += handwriting.length - missed;
+		if (missed > 0 && geometry.pageText !== null) {
 			state.warnings.push(
 				missed === 1
 					? `Page ${page.embedPage}: a pen mark could not be matched to any text there, so it is not in the digest. The embedded render still shows it.`
@@ -1018,7 +1030,7 @@ export async function buildDigest(
 	params: { source: DigestSource; embedPath: string; pages: DigestPageInput[] },
 ): Promise<DigestBuild> {
 	const { source, embedPath, pages } = params;
-	const state: BuildState = { deps, warnings: [], ocrStatuses: [], ocrWarnings: [], ocrRetry: { retryable: false, refused: 0 } };
+	const state: BuildState = { deps, warnings: [], ocrStatuses: [], ocrWarnings: [], ocrRetry: { retryable: false, refused: 0 }, unread: { strokes: 0 } };
 
 	// One device for the whole document: a book is annotated on one reMarkable, and resolving this per
 	// page would let a page whose scene declares no screen disagree with its neighbours.
@@ -1070,6 +1082,7 @@ export async function buildDigest(
 		ocrWarnings: state.ocrWarnings,
 		ocrRetryable: ocrRetryable(state),
 		covered: digestPages.map((page) => page.embedPage),
+		unreadHandwriting: state.unread.strokes,
 	};
 }
 

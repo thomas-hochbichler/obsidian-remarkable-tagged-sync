@@ -30,6 +30,8 @@ export interface PartialOutcome {
 	readonly backendWarnings?: readonly string[];
 	/** What the Zotero half could not do -- see `SyncResult.zoteroNotices` (spec §3.4.2, §3.4.3). */
 	readonly zoteroNotices?: readonly string[];
+	/** What the sync says about a document the vault sent -- see `SyncResult.vaultSendNotices` (send spec §6.5). */
+	readonly vaultSendNotices?: readonly string[];
 }
 
 /**
@@ -52,6 +54,18 @@ export function backendWarningNotices(warnings: readonly string[]): NoticeText[]
 		});
 	}
 	return notices;
+}
+
+/**
+ * What the sync says about a document the vault sent (send spec §6.5), as notices.
+ *
+ * The one part of the end-of-sync report a background run raises too. Each sentence is said once per
+ * sent copy, and the flag that says so is kept whether anyone watched or not -- kept quiet, it would be
+ * lost for good, and for anyone who only auto-syncs it would never be heard. Once per copy is also why
+ * it cannot become the notice that fires every interval.
+ */
+export function vaultSendNoticeTexts(sentences: readonly string[]): NoticeText[] {
+	return sentences.map((message) => ({ message, timeout: LONG_NOTICE_MS }));
 }
 
 /**
@@ -78,6 +92,8 @@ export function partialOutcomeNotices(result: PartialOutcome): NoticeText[] {
 	// that did not is invisible from anywhere else. Its sentences are already one per document and
 	// already say what to do about it, so they go up as they were written (spec §3.4.2).
 	for (const notice of result.zoteroNotices ?? []) notices.push({ message: notice, timeout: LONG_NOTICE_MS });
+	// The same kind: one document each, and already saying what to do.
+	notices.push(...vaultSendNoticeTexts(result.vaultSendNotices ?? []));
 	if (result.editedNotesSkipped > 0) {
 		notices.push({
 			message:

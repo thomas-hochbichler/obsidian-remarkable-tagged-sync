@@ -21,6 +21,11 @@ export class TagRouter {
 		return this.mapping[tag] ?? null;
 	}
 
+	/** Every mapped tag, in the settings' order -- what a sentence naming the sync tags lists. */
+	tags(): string[] {
+		return Object.keys(this.mapping);
+	}
+
 	fingerprint(): string {
 		return mappingFingerprint(this.mapping);
 	}
