@@ -1,0 +1,151 @@
+# Send from the vault (1.12.0): a note or a PDF from the vault onto the tablet, and the marks back
+# as one note that names its origin.
+#
+# V1 is the page a note is printed on. The numbers were chosen on the tablet itself, over nine
+# printed rounds of a prototype; nothing here can see them on a screen, so every one is pinned.
+
+
+- feature: V1
+  name: A sent note's page, print options and stylesheet
+  code: src/note-print.ts
+  tier: free
+  scenarios:
+    - id: V1.1
+      scenario: A note is printed for a reMarkable 1, 2 or Paper Pure
+      expect: The page is that screen's physical size (6.21 × 8.28 in), the text column 486 px and the keep-whole limit 248 px -- so type has its real size on the device
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > prints on the reMarkable 1, 2 and Paper Pure's own screen, with a 486 px column"
+
+    - id: V1.2
+      scenario: A note is printed for a Paper Pro
+      expect: The page is the Paper Pro's screen (7.07 × 9.43 in), column 569 px, keep-whole limit 287 px. The 1/2 page shown there would be scaled up 14 %, to the size rejected on the tablet
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > prints on the Paper Pro's own screen, with a 569 px column"
+
+    - id: V1.3
+      scenario: The page size is derived
+      expect: From the renderer's own device frames, never a literal -- one place knows what a reMarkable screen is
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > takes the page from the renderer's device frames, not from a number of its own"
+
+    - id: V1.4
+      scenario: reMarkable 1/2 page at Normal
+      expect: Body 10 pt, code 7 pt, diagram type 8.5 pt
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets rm12 at normal in 10 pt, code in 7 pt and diagram type in 8.5 pt"
+
+    - id: V1.5
+      scenario: reMarkable 1/2 page at Large
+      expect: Body 12 pt, code 8.4 pt, diagram type 10.2 pt -- everything keeps its ratio to the body
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets rm12 at large in 12 pt, code in 8.4 pt and diagram type in 10.2 pt"
+
+    - id: V1.6
+      scenario: Paper Pro page at Normal
+      expect: Body 10 pt, code 7 pt, diagram type 8.5 pt -- the tablet changes the page, not the type
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets paperPro at normal in 10 pt, code in 7 pt and diagram type in 8.5 pt"
+
+    - id: V1.7
+      scenario: Paper Pro page at Large
+      expect: Body 12 pt, code 8.4 pt, diagram type 10.2 pt
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets paperPro at large in 12 pt, code in 8.4 pt and diagram type in 10.2 pt"
+
+    - id: V1.8
+      scenario: Toolbar on the right is off
+      expect: Left 0.75 in (clears the toolbar), right 0.40 in, top and bottom 0.45 in
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > keeps the wide margin on the left, where the toolbar is"
+
+    - id: V1.9
+      scenario: Toolbar on the right is on (left-handed mode), on either tablet
+      expect: Left and right swap and nothing else changes; the column stays as wide
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > swaps only left and right for a tablet in left-handed mode"
+
+    - id: V1.10
+      scenario: The options for printToPDF are built
+      expect: Page and margins in inches, backgrounds printed, generateDocumentOutline and generateTaggedPDF both on -- the outline needs both, and it is what files returned quotes under the note's headings
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > passes the page and margins in inches, the background, and both outline options"
+
+    - id: V1.11
+      scenario: A page or margin is NaN
+      expect: Refused before the call. On Electron 21-39 one rejected print blocks all PDF printing until Obsidian restarts
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of NaN before Electron sees it"
+
+    - id: V1.12
+      scenario: A page or margin is infinite
+      expect: Refused before the call, for the same reason
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of Infinity before Electron sees it"
+
+    - id: V1.13
+      scenario: A page or margin is zero
+      expect: Refused before the call
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of 0 before Electron sees it"
+
+    - id: V1.14
+      scenario: A page or margin is negative
+      expect: Refused before the call
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of -1 before Electron sees it"
+
+    - id: V1.15
+      scenario: The margins together reach the page's width or height
+      expect: Refused -- a page with no room for text is a rejected print
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses margins that leave no room for text"
+
+    - id: V1.16
+      scenario: The print stylesheet is built
+      expect: Every rule is scoped to `.print` and the printed note's public class, so it cannot reach anything outside the printed note
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > scopes every rule to the print wrapper and the printed note"
+
+    - id: V1.17
+      scenario: Normal and Large
+      expect: The note's body at 10 / 12 pt with line height 1.45, code at 7 / 8.4 pt with 1.35
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > sets the body size and line height on the note, and code in its own size"
+
+    - id: V1.18
+      scenario: Headings, paragraphs, code, tables and images in print
+      expect: Headings stay with what follows, orphans and widows of 3, code wraps, tables get content-sized columns at 0.78 em with the size reaching the cells, images and diagrams never wider than the column
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > keeps headings with what follows, wraps code and sizes tables by their content"
+
+    - id: V1.19
+      scenario: A caption, a missing embed, a short block
+      expect: Each has its rule under its class -- caption 0.85 em, the missing embed small and grey, a short block kept whole
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > styles the caption, the missing embed and the kept-whole block by their classes"
+
+    - id: V1.20
+      scenario: Anything the stylesheet might push left of the column
+      expect: The only negative length is a task checkbox pulled back into its list's own indent -- the strip left of the column is under the tablet's toolbar
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > places nothing left of the text column: a checkbox is pulled back no further than its list's own indent"
