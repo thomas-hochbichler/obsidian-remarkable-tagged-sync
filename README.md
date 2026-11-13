@@ -483,6 +483,8 @@ This is free over the reMarkable cloud. Over SSH, without the cloud, it is part 
 PDF to your reMarkable account: the file itself, or the printed note with the notes and images it
 embeds. Nothing is sent until you run the command.
 
+![A sent note and what came back: on the left the printed page as it came back from the tablet, with a highlighted paragraph, an underlined sentence and a handwritten "Is this correct?" beside the diagram; on the right the note "Login-Spec — marked up", its top line saying "Sent from Login-Spec on 2026-11-13", then both marks quoted under their headings and the remark as text](docs/screenshot-send-from-vault.png)
+
 ### The loop
 
 1. Send a note — a spec, a draft, a chapter.
