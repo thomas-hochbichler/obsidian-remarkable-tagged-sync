@@ -3913,6 +3913,62 @@ describe("a unit that failed to render", () => {
 	});
 });
 
+describe("the screen the synced pages declared (send spec §7)", () => {
+	// Pages that name their screen in `scene_info`: a reMarkable 2's and a Paper Pro's. PAGE_BYTES names none.
+	const RM2_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/weather-station-page1.rm"));
+	const PRO_PAGE_BYTES = UNANCHORED_PAGE_BYTES;
+	const OLDER = Date.UTC(2026, 9, 1);
+	const NEWER = Date.UTC(2026, 10, 1);
+
+	const notebook = (id: string, lastModified: number, pageHash: string) => ({
+		entry: documentEntry({ id, hash: `hash-${id}`, visibleName: id, lastModified: String(lastModified), tags: [{ name: "sync", timestamp: 0 }] }),
+		content: documentContent({ cPages: cPages(["p0"]) }),
+		pageHashes: { p0: pageHash },
+	});
+
+	async function syncOf(docs: ReturnType<typeof notebook>[], bytesByHash: Record<string, Uint8Array>) {
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: docs.map((doc) => doc.entry),
+			contentById: Object.fromEntries(docs.map((doc) => [doc.entry.id, doc.content])),
+			pageHashesByDoc: Object.fromEntries(docs.map((doc) => [doc.entry.id, doc.pageHashes])),
+		});
+		api.raw.getHash.mockImplementation(async ({ hash }: { hash: string }) => bytesByHash[hash]);
+		return runSync(baseDeps(api, { sync: "Notes" }), EMPTY_SYNC_INDEX);
+	}
+
+	// Two tablets on one account: the listing's order must not decide which one the guess follows.
+	it("reports the newest rendered document's screen, whatever order the listing has", async () => {
+		const bytes = { rm2: RM2_PAGE_BYTES, pro: PRO_PAGE_BYTES };
+		const older = notebook("doc-old", OLDER, "rm2");
+		const newer = notebook("doc-new", NEWER, "pro");
+
+		const expected = { tablet: "paperPro", at: new Date(NEWER).toISOString() };
+		expect((await syncOf([newer, older], bytes)).screenSeen).toEqual(expected);
+		expect((await syncOf([older, newer], bytes)).screenSeen).toEqual(expected);
+	});
+
+	it("reports the screen of a PDF's annotations too", async () => {
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Book", lastModified: String(OLDER), tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[595, 842]]) },
+			pageHashesByDoc: { "doc-1": { p0: "rm2" } },
+		});
+		api.raw.getHash.mockResolvedValue(RM2_PAGE_BYTES);
+
+		const result = await runSync(baseDeps(api, { sync: "Notes" }), EMPTY_SYNC_INDEX);
+
+		expect(result.screenSeen).toEqual({ tablet: "rm12", at: new Date(OLDER).toISOString() });
+	});
+
+	it("reports nothing when no rendered page declares a screen, or nothing was rendered", async () => {
+		expect((await syncOf([notebook("doc-1", NEWER, "plain")], { plain: PAGE_BYTES })).screenSeen).toBeNull();
+		expect((await syncOf([], {})).screenSeen).toBeNull();
+	});
+});
+
 describe("a digest read again with nothing changed on the tablet", () => {
 	const KEY = notebookSyncKey("doc-1", "sync");
 	const OTHER_KEY = notebookSyncKey("doc-1", "other");

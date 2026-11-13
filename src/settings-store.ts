@@ -24,6 +24,7 @@ import type { BackendSettings } from "./ocr-registry";
 import { DEFAULT_SSH_SETTINGS, type SshSettings } from "./ssh-transport";
 import type { StoredHashes } from "./ssh-hash-cache";
 import { DEFAULT_READWISE_SETTINGS, type ReadwiseSettings, type StoredReadwiseBooks } from "./readwise-state";
+import { DEFAULT_VAULT_SEND_SETTINGS, migrateVaultSend, type VaultSendSettings } from "./vault-send-settings";
 import type { StoredVaultSends } from "./vault-sends";
 import type { StoredZoteroLinks } from "./zotero-links";
 import { DEFAULT_ZOTERO_SETTINGS, type ZoteroSettings } from "./zotero-settings";
@@ -80,6 +81,8 @@ export interface TaggedSyncData {
 	 * Opaque here, like `zoteroLinks`; only `vault-sends.ts` reads inside it.
 	 */
 	vaultSends: StoredVaultSends;
+	/** The *Send from the vault* group's rows, and the screen the synced pages declared (send spec §7). */
+	vaultSend: VaultSendSettings;
 	tagFolderMap: TagFolderMap;
 	syncIndex: SyncIndex;
 	ocrBackend: OcrBackendId;
@@ -146,6 +149,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	zotero: DEFAULT_ZOTERO_SETTINGS,
 	zoteroLinks: {},
 	vaultSends: {},
+	vaultSend: DEFAULT_VAULT_SEND_SETTINGS,
 	tagFolderMap: {},
 	syncIndex: EMPTY_SYNC_INDEX,
 	// Placeholder only -- the effective default is platform-derived on load (multi-provider spec §7).
@@ -254,6 +258,9 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// Carried whole for the same reason -- but only a map: a rename spreads it, and a string would
 		// spread into characters.
 		vaultSends: typeof stored?.vaultSends === "object" && stored.vaultSends !== null && !Array.isArray(stored.vaultSends) ? stored.vaultSends : {},
+		// Field by field rather than spread: two of its rows are dropdowns, and a value they do not offer
+		// would be handed to them as it is.
+		vaultSend: migrateVaultSend(stored?.vaultSend),
 		tagFolderMap: stored?.tagFolderMap ?? {},
 		// A copy, not the constant. `onVaultRename` writes into `data.syncIndex.rows` in place, so
 		// handing a fresh install EMPTY_SYNC_INDEX itself means the next one starts with the last one's

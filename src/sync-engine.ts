@@ -42,6 +42,7 @@ import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, tr
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 import { readsNothing } from "./vision-ocr-backend";
+import { newerScreen, type ScreenSeen, screenDeclaredBy } from "./vault-send-settings";
 
 export type SyncRowStatus = "active" | "orphaned";
 
@@ -466,6 +467,12 @@ export interface SyncResult {
 	 * and diagnostics nobody opens is not where that gets noticed.
 	 */
 	zoteroNotices: string[];
+	/**
+	 * The screen the newest document this run rendered declared, or `null` when none did (send spec §7).
+	 * Newest by the document's `lastModified`, never the last rendered: the run walks the listing's order,
+	 * and two tablets on one account would flip the guess for *Tablet* by order alone.
+	 */
+	screenSeen: ScreenSeen | null;
 }
 
 /**
@@ -2219,7 +2226,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt, deps.manual ?? false);
 	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
+		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [], screenSeen: null };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -2260,6 +2267,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (unit === null) return;
 		textLayer = textLayer === null ? unit : { pages: textLayer.pages + unit.pages, layered: textLayer.layered + unit.layered, placed: textLayer.placed + unit.placed, leftOut: textLayer.leftOut + unit.leftOut };
 	};
+	// Read off what a render already parsed, so the guess for *Tablet* costs no request of its own.
+	let screenSeen: ScreenSeen | null = null;
+	const sawScreen = (entry: Entry, scenes: readonly (RmPage | null)[]): void => {
+		screenSeen = newerScreen(screenSeen, screenDeclaredBy(scenes, entry.lastModified));
+	};
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -2295,6 +2307,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			skipErrors,
 			backendWarnings,
 			zoteroNotices,
+			screenSeen,
 		};
 	};
 
@@ -2580,6 +2593,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				if (pdfBacked) {
 					const composite = await annotatedPdfPages(api, entry.id, docPages, pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
+					sawScreen(entry, composite.map((page) => page.annotations));
 					ocrPages = annotationOcrPages(composite);
 					highlights = collectHighlights(composite.map((page, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: page.annotations?.highlights ?? [] })));
 					digestPages = composite.map((page, i) => ({
@@ -2594,6 +2608,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					ocrPages = notebookOcrPages(scenes, pageOrder);
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
+					sawScreen(entry, scenes);
 					renderScenes = scenes;
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
@@ -2743,6 +2758,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const pageRef = pageRefById.get(unit.pageId)!;
 					const composite = await annotatedPdfPages(api, entry.id, [pageRef], pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
+					sawScreen(entry, composite.map((page) => page.annotations));
 					// A single-page embed, so the `#page=` anchor is 1 -- the same ordinals `collectHighlights` gets.
 					ocrPages = [{ scene: composite[0]?.annotations ?? null, pageLabel: pageIndex, embedPage: 1 }];
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: composite[0]?.annotations?.highlights ?? [] }]);
@@ -2758,6 +2774,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = [await renderPage(api, entry.id, unit.pageId, pageHashes.get(unit.pageId))];
 					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles));
+					sawScreen(entry, scenes);
 					renderScenes = scenes;
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
 					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
@@ -2875,7 +2892,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices };
+	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices, screenSeen };
 }
 
 export interface ReTranscribeDeps {

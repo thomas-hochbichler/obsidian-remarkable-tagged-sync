@@ -693,10 +693,10 @@
   scenarios:
     - id: SR1.1
       scenario: The tab of a connected vault is asked for its definitions
-      expect: Eight groups in spec §3's order, each with its tagged-sync-group class; Integrations holds the Zotero and Readwise pages
+      expect: Nine groups in spec §3's order -- Send from the vault (send spec §7) between Automatic sync and Integrations -- each with its tagged-sync-group class; Integrations holds the Zotero and Readwise pages
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the declarative tab (settings-redesign spec §2, §3) > answers with the root page's eight groups in order, Zotero and Readwise as pages"
+      test: "the declarative tab (settings-redesign spec §2, §3) > answers with the root page's nine groups in order, Zotero and Readwise as pages"
 
     - id: SR1.2
       scenario: The tab of a vault with no source connected is asked for its definitions
@@ -828,3 +828,93 @@
       layer: vault
       file: src/settings-tab.test.ts
       test: "the Tagged Sync Pro section > draws the status row and, until Pro is active, the key row with the money-back promise"
+
+- feature: I17
+  name: The Send from the vault group (send spec §7)
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: I17.1
+      scenario: The group is asked for its rows
+      expect: A first row without a control (a group takes no description, §12 F9), then the folder (text on vaultSend.folder), Tablet and Text size (dropdowns on vaultSend.tablet and vaultSend.textSize), Toolbar on the right (toggle on vaultSend.toolbarRight) and the SSH switch on zotero.sendOverSsh
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > answers its rows in order, each control bound to its key"
+
+    - id: I17.2
+      scenario: The group is drawn
+      expect: Every name and description in §7's words, the SSH row's naming the restart and that an earlier copy is never replaced over SSH
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > says every row in the spec's words"
+
+    - id: I17.3
+      scenario: The two dropdowns and the folder field are drawn
+      expect: Tablet offers reMarkable 1, 2 or Paper Pure and Paper Pro -- never "auto", never a Move; Text size Normal and Large, Normal first; the folder's placeholder is Obsidian
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > offers the two tablets and the two text sizes, and nothing else"
+
+    - id: I17.4
+      scenario: Tablet is drawn before a pick, with no synced page that declared a screen
+      expect: reMarkable 1, 2 or Paper Pure
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > Tablet, until the user chooses > shows the reMarkable 1, 2 or Paper Pure while no synced page has declared a screen"
+
+    - id: I17.5
+      scenario: Tablet is drawn before a pick, after a sync saw a Paper Pro's pages
+      expect: Paper Pro -- the control shows the guess a send would use
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > Tablet, until the user chooses > shows the screen the synced pages declared"
+
+    - id: I17.6
+      scenario: The user picks the other tablet than the pages declared
+      expect: The pick is stored and saved, and the dropdown shows it from then on
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > Tablet, until the user chooses > stores the pick, which counts from then on whatever the pages say"
+
+    - id: I17.7
+      scenario: The tablet the dropdown already shows as its guess is set as the value
+      expect: Stored as a pick and saved -- the shown guess is no reason to skip the write
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > Tablet, until the user chooses > stores a pick of the tablet it was already showing"
+
+    - id: I17.8
+      scenario: Text size is set to Large and Toolbar on the right switched on
+      expect: Both stored under vaultSend
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > saves the text size and the toolbar switch"
+
+    - id: I17.9
+      scenario: Inbox with a space on either side is typed into the folder field, then only spaces
+      expect: Inbox, current at once and saved through the typing debounce; emptied, the folder is Obsidian rather than the tablet's root
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > trims a typed folder name, and takes an emptied one as Obsidian"
+
+    - id: I17.10
+      scenario: The folder is set to the one Zotero papers go to
+      expect: Accepted (05, the user's own requirement); the Zotero folder stays as it was
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > may name the Zotero folder, and leaves the Zotero folder as it was"
+
+    - id: I17.11
+      scenario: A free vault draws the group
+      expect: The SSH switch is shown, named with (Pro), and disabled -- the existing transport gate, no new one
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > keeps the SSH switch shut for a free vault, and says it is Pro"
+
+    - id: I17.12
+      scenario: A Pro vault switches SSH send on in this group
+      expect: zotero.sendOverSsh is on, and the Zotero page's switch shows it -- one value in both places
+      tier: pro
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Send from the vault group (send spec §7) > writes the one SSH switch the Zotero page shows"

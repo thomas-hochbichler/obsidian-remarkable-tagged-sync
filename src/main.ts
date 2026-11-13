@@ -54,6 +54,7 @@ import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
+import { noteScreenSeen } from "./vault-send-settings";
 import { dropExpired, markListedSends, remapOrigins } from "./vault-sends";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
@@ -818,6 +819,8 @@ export default class TaggedSyncPlugin extends Plugin {
 				const now = this.nowIso();
 				this.data.vaultSends = dropExpired(markListedSends(this.data.vaultSends, result.documentIds, now), new Date(now));
 			}
+			// The guess for *Tablet* (send spec §7): only a newer document than the one it came from moves it.
+			if (result.screenSeen) this.data.vaultSend = noteScreenSeen(this.data.vaultSend, result.screenSeen);
 
 			// The one-time pass that brings already-written notes up to the current managed key set
 			// (#107, #109). Without it a vault that has settled would never receive a new key at all:

@@ -211,6 +211,20 @@
       file: src/settings-store.test.ts
       test: "migrateSettings > the record of vault sends (send spec §5) > reads a record that is no map as empty"
 
+    - id: A8.46
+      scenario: The data.json the last shipped release wrote is loaded by a build with the Send from the vault group
+      expect: Folder Obsidian, no tablet chosen ("auto"), Normal, toolbar on the left, no screen seen
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Send from the vault group (send spec §7) > gives the data.json the last release wrote folder Obsidian, no tablet chosen, Normal and the toolbar on the left"
+
+    - id: A8.47
+      scenario: A vaultSend block holding only a text size, beside a Zotero folder named Inbox
+      expect: The rest from the defaults; the vault send's folder is Obsidian, not taken from Zotero's
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Send from the vault group (send spec §7) > fills a half-written group from the defaults and never takes the Zotero folder for its own"
+
 - feature: E12
   name: Unknown or retired backend id migrates
   code: src/settings-store.ts

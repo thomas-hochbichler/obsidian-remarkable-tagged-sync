@@ -15,6 +15,8 @@
 # trash, against a fake cloud that has only the members the send may call. The cloud transport's
 # own sessions for both are in A9; whether rmapi-js really refuses a changed copy is checked once
 # live (ticket 20).
+# V6 is the guess for the *Tablet* setting: the screen the synced pages declare, the newest
+# document's winning, and the pick over both. The group's rows are I17, its loading A8.
 
 
 - feature: V1
@@ -1055,3 +1057,148 @@
       layer: unit
       file: src/ssh-transport.test.ts
       test: "sending a PDF over SSH > has no look at earlier copies and no trash"
+
+- feature: V6
+  name: The tablet a note is printed for, and the guess at it
+  code: src/vault-send-settings.ts
+  tier: free
+  scenarios:
+    - id: V6.1
+      scenario: The user picked a tablet, and the synced pages declared the other one
+      expect: The pick
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the tablet a note is printed for > is the user's pick, whatever the synced pages said"
+
+    - id: V6.2
+      scenario: No pick, a Paper Pro's pages seen
+      expect: Paper Pro
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the tablet a note is printed for > is the screen last seen until the user picks"
+
+    - id: V6.3
+      scenario: No pick, nothing seen
+      expect: The reMarkable 1, 2 or Paper Pure page (06 #1)
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the tablet a note is printed for > is the reMarkable 1, 2 or Paper Pure page while nothing has been seen"
+
+    - id: V6.4
+      scenario: A document's pages carry scene_info, one of them a reMarkable 2's, one a Paper Pro's screen; its lastModified in milliseconds or ISO
+      expect: That tablet, at the document's time as ISO
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the screen a synced document declares > names the tablet its pages were written on, at the document's last change"
+
+    - id: V6.5
+      scenario: Pages without scene_info, a page with none at all, a Paper Pro Move's screen
+      expect: Nothing -- the Move stays at 1/2, the entry 06 #1 advises for it
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the screen a synced document declares > is nothing for pages that declare no screen, or one no known tablet has"
+
+    - id: V6.6
+      scenario: A declaring document whose lastModified is missing or unreadable
+      expect: Nothing -- a declaration that cannot be placed in time could not be told from an older one
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the screen a synced document declares > is nothing when the document's time cannot be read"
+
+    - id: V6.7
+      scenario: The first declaration arrives
+      expect: Remembered as tabletSeen with its time
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > takes the first declaration"
+
+    - id: V6.8
+      scenario: A newer document declares the other tablet
+      expect: It replaces the one held -- the newest is the device in use (§11 P6)
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > replaces it with a newer document's"
+
+    - id: V6.9
+      scenario: An older document declares the other tablet, in either order
+      expect: The newer one stays -- two tablets on one account never flip the guess
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > never lets an older document's declaration replace a newer one's"
+
+    - id: V6.10
+      scenario: Two declarations at the same time, and a sync that declared nothing
+      expect: The one held stays; nothing declared changes nothing (the same object)
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > keeps the one held on a tie, and changes nothing when nothing was declared"
+
+    - id: V6.11
+      scenario: No vaultSend block in data.json
+      expect: Folder Obsidian, tablet "auto", Normal, toolbar left, nothing seen
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > gives a data.json without the group the defaults: folder Obsidian, tablet not chosen, Normal, toolbar left"
+
+    - id: V6.12
+      scenario: A block holding every value the group can hold
+      expect: Kept exactly, and reading it again changes nothing
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > keeps every value the group can hold"
+
+    - id: V6.13
+      scenario: A hand-edited block -- a blank folder, a tablet "rm2", a text size "huge", a toggle "yes" -- or no object at all
+      expect: Each of those the default; a dropdown is never handed a value it does not offer
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > reads a value no control offers, or no folder name, as the default"
+
+    - id: V6.14
+      scenario: A screen seen without its time, with an unreadable one, or a time without a screen
+      expect: Neither is kept
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > keeps the screen seen only together with its time"
+
+    - id: V6.15
+      scenario: A sync renders a reMarkable 2 notebook and a newer Paper Pro notebook, listed in either order
+      expect: The run reports the Paper Pro, at the newer document's time
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the screen the synced pages declared (send spec §7) > reports the newest rendered document's screen, whatever order the listing has"
+
+    - id: V6.16
+      scenario: A sync renders an annotated PDF whose annotation scene names a reMarkable 2
+      expect: The run reports the reMarkable 1/2
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the screen the synced pages declared (send spec §7) > reports the screen of a PDF's annotations too"
+
+    - id: V6.17
+      scenario: A sync renders only pages without scene_info, or renders nothing
+      expect: The run reports no screen
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the screen the synced pages declared (send spec §7) > reports nothing when no rendered page declares a screen, or nothing was rendered"
+
+    - id: V6.18
+      scenario: The plugin runs a sync that reports a screen
+      expect: tabletSeen and tabletSeenAt are set and saved with the run
+      layer: vault
+      file: src/vault-send-wiring.test.ts
+      test: "the screen a sync saw (send spec §7) > is remembered with its document's time, and saved with the run"
+
+    - id: V6.19
+      scenario: The plugin runs a sync whose screen comes from an older document than the one held
+      expect: The one held stays
+      layer: vault
+      file: src/vault-send-wiring.test.ts
+      test: "the screen a sync saw (send spec §7) > does not replace one seen on a newer document"
+
+    - id: V6.20
+      scenario: The user picked a tablet, and a sync reports the other one
+      expect: The pick stays
+      layer: vault
+      file: src/vault-send-wiring.test.ts
+      test: "the screen a sync saw (send spec §7) > leaves the user's pick as it is"
