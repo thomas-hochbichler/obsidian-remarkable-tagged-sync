@@ -22,6 +22,10 @@
 # H8. A real send over the cloud is checked in the Demo vault by a script (research/16-send-check/).
 # V8 is where a send is offered and what the plugin hands it: the command, the file menu, the real
 # dialog's buttons.
+# V9 is what the sync does with a document the vault sent: one note per mapped tag for the whole
+# document, page tags included (ADR 0002), the document gate that keeps a reviewed one closed, the
+# origin line, Zotero. The origin line's place in the hand-edit check is G3. V10 is the note itself:
+# its name and the ladder after it, the origin line's three forms, and what is hashed.
 
 
 - feature: V1
@@ -1544,3 +1548,230 @@
       layer: unit
       file: src/vault-send-plugin.test.ts
       test: "what the plugin hands a vault send > keeps the user's copy when the dialog is closed with Escape"
+
+- feature: V9
+  name: The sync brings a sent document back as one note per tag
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V9.1
+      scenario: A printed note of three pages comes back with a page tag on its middle page and ink on the other two
+      expect: One whole-document note, `Login-Spec — marked up`, all three pages in the render and the digest, no page note; the run hands back promotedTags [sync]
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > brings a page tag back as one note for the whole document, the marks on its untagged pages included"
+
+    - id: V9.2
+      scenario: The same PDF, but the vault did not send it
+      expect: A page note `Login-Spec — Page 2`, as today; no marks
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > keeps the page-note rule for the same PDF when the vault did not send it"
+
+    - id: V9.3
+      scenario: The progress bar over a sent document with one page tag (§12 F1)
+      expect: The pre-scan's total is the whole document's three pages, and the run's last message is done 3 of 3
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > counts the whole document in the pre-scan, the steps the run then reports"
+
+    - id: V9.4
+      scenario: A document tag and a page tag, mapped to two folders
+      expect: Two notes, one in each tag's folder, both named marked up
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > writes one note per mapped tag, each in its tag's folder"
+
+    - id: V9.5
+      scenario: Two tags routed to one folder
+      expect: '`… — marked up` and `… — marked up (sync)`, no date'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > tells two tags routed to one folder apart by the tag, not by the date"
+
+    - id: V9.6
+      scenario: Another document's note already holds the name
+      expect: The note takes the send date; the other note is untouched
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > names a name an earlier copy's note holds with the send date"
+
+    - id: V9.7
+      scenario: The origin is in the vault
+      expect: '`Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13` right below the callout''s own two lines'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > names its origin in the callout, with a link that opens it"
+
+    - id: V9.8
+      scenario: The origin is called `C# notes`
+      expect: '`Sent from [C# notes](<Specs/C# notes.md>) on …` -- a wikilink would point at a heading'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > links an origin whose path holds # with a Markdown link"
+
+    - id: V9.9
+      scenario: A reviewed sent document, then a sync after a change elsewhere on the account (the gate of §6.1)
+      expect: The document is not opened -- no getContent -- because the record's promotedTags stand in for the page tag the listing does not show
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the document gate (§6.1) > does not open a reviewed document again when only something else on the account changed"
+
+    - id: V9.10
+      scenario: The same two syncs, with the first run's marks never applied
+      expect: The document is opened again -- what the review found, and what promotedTags exists for
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the document gate (§6.1) > would open it on every sync without the page tags the last opening promoted"
+
+    - id: V9.11
+      scenario: A folder tag is taken off the folder a reviewed sent document sits in
+      expect: The document is opened, the folder tag's note orphaned, the page tag's note stays active
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the document gate (§6.1) > opens it when a folder tag is taken off, and orphans that tag's note"
+
+    - id: V9.12
+      scenario: The origin is gone from its path; a sync with nothing changed on the document, then one with a change
+      expect: The first writes nothing; the second writes the text form `Sent from "Login-Spec" on … — no longer in the vault`
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the origin line (§6.3) > turns into the file's name once the origin is gone, at the next write and not before"
+
+    - id: V9.13
+      scenario: A printed note comes back with Zotero connected
+      expect: The Zotero pass is never asked; the document is rendered as any other
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > Zotero (§6.4) > never matches a note the vault printed"
+
+    - id: V9.14
+      scenario: A PDF the vault sent comes back with Zotero connected
+      expect: The pass is asked about it like any PDF; the origin line keeps the .pdf in its link
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > Zotero (§6.4) > passes a PDF the vault sent through it like any PDF"
+
+    - id: V9.15
+      scenario: A sent copy nobody wrote on, tagged as a whole (§12 F12)
+      expect: A note with the callout, the origin line and the render, and no digest; "written with neither a digest nor a transcript" in diagnostics only, as for any tagged PDF nobody wrote on
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > brings a tagged copy nobody wrote on back as the callout and the render, with no digest"
+
+    - id: V9.16
+      scenario: The plugin runs a sync with a send recorded, and the run hands back a mark
+      expect: The run read the plugin's record; the mark is in the saved data.json
+      layer: unit
+      file: src/vault-send-wiring.test.ts
+      test: "what a sync found about the vault's sends (send spec §5, §6.1) > reads the record the plugin holds, and saves the run's marks into it"
+
+    - id: V9.17
+      scenario: The origin is renamed while the run goes on
+      expect: The mark lands on the live map, beside the new origin
+      layer: unit
+      file: src/vault-send-wiring.test.ts
+      test: "what a sync found about the vault's sends (send spec §5, §6.1) > puts the marks on the live map, so a rename made while the run went on stays"
+
+- feature: V10
+  name: A sent document's note -- its name, its origin line, what is hashed
+  code: src/note-builder.ts
+  tier: free
+  scenarios:
+    - id: V10.1
+      scenario: The base name of a sent document's note
+      expect: '`<name> — marked up`, through the same sanitising as every name'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > is named marked up, for the whole document"
+
+    - id: V10.2
+      scenario: A note as origin
+      expect: '`Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13`'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > links a note by its path without .md, with the file's name to read"
+
+    - id: V10.3
+      scenario: A PDF as origin
+      expect: The link keeps `.pdf`; the name to read does not
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > links a PDF with its extension"
+
+    - id: V10.4
+      scenario: The origin is gone
+      expect: '`Sent from "Login-Spec" on 2026-11-13 — no longer in the vault`'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > names an origin that is gone as text"
+
+    - id: V10.5
+      scenario: A path holding `#`, `^`, `[`, `]` or `|`
+      expect: A Markdown link with the path in angle brackets; brackets in the shown name escaped
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > links a path a wikilink would break on with a Markdown link, escaping the brackets it shows"
+
+    - id: V10.6
+      scenario: A sent PDF that is also linked to Zotero
+      expect: The origin line first, the Zotero line below it, both inside the callout
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > puts the origin line first in the callout, above a Zotero line"
+
+    - id: V10.7
+      scenario: The block read back with the link rewritten, and a block built with the text form
+      expect: Both hash like the block as written (§11 P1)
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > what the hand-edit check hashes (§11 P1) > leaves the origin line out, so Obsidian's rewrite of its link is no edit"
+
+    - id: V10.8
+      scenario: A sent document's block edited anywhere but the origin line
+      expect: The hash differs -- an edit
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > what the hand-edit check hashes (§11 P1) > still sees an edit anywhere else in the block"
+
+    - id: V10.9
+      scenario: A block without the origin line, whose transcript quotes "> Sent from my phone"
+      expect: Hashed whole, exactly as before 1.12.0; a change to that quoted line is an edit
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > what the hand-edit check hashes (§11 P1) > hashes a block without the line as before, a quoted Sent from in its text included"
+
+    - id: V10.10
+      scenario: The bare name is free
+      expect: '`Reviews/Login-Spec — marked up.md`'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > takes the bare name while it is free"
+
+    - id: V10.11
+      scenario: Another document's note holds the bare name
+      expect: The send date is added
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > takes the send date when another document's note has the name"
+
+    - id: V10.12
+      scenario: The dated name is taken as well
+      expect: The existing ladder goes on from the dated name -- ` (sync)`
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > goes on with the existing ladder when the dated name is taken too"
+
+    - id: V10.13
+      scenario: This document's own note under its other tag holds the bare name
+      expect: No date; ` (sync)` at once
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > skips the date when this document's own note under its other tag has the name"
+
+    - id: V10.14
+      scenario: A mapped tag is renamed to one in another folder
+      expect: The moved note keeps the marked-up name there
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > is the name a tag moved to another folder carries there"

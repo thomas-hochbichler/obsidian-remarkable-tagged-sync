@@ -1,16 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	blockHashOf,
 	buildNoteContent,
 	deriveBaseName,
+	extractManagedBlock,
+	hashString,
 	isEmptyManagedBlock,
 	managedBlockHash,
 	moveNote,
+	originLine,
 	renderTranscript,
 	sanitizeFilenamePart,
 	updateTranscript,
 	writeNote,
 	type NoteFields,
 	type NoteStore,
+	type SentNote,
 	type TranscriptPage,
 } from "./note-builder";
 
@@ -719,5 +724,96 @@ describe("renderTranscript", () => {
 		const after = (await store.read("Work/Note.md"))!;
 		expect(after).toContain("## Transcript\nREPLACED\n<!-- tagged-sync:end -->");
 		expect(after).toContain("My own notes.");
+	});
+});
+
+describe("the note of a document the vault sent (send spec §6.2, §6.3)", () => {
+	const LINE = "Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13";
+	const sent = (overrides: Partial<SentNote> = {}): SentNote => ({ originLine: LINE, sentOn: "2026-11-13", ownNotes: [], ...overrides });
+	const sentFields = (overrides: Partial<SentNote> = {}): NoteFields => baseFields({ source: "Login-Spec", sent: sent(overrides) });
+
+	it("is named marked up, for the whole document", () => {
+		expect(deriveBaseName("Login-Spec", null, true)).toBe("Login-Spec — marked up");
+		expect(deriveBaseName("Q3/Q4 Plan", null, true)).toBe("Q3-Q4 Plan — marked up");
+	});
+
+	describe("originLine", () => {
+		it("links a note by its path without .md, with the file's name to read", () => {
+			expect(originLine("Specs/Login-Spec.md", true, "2026-11-13")).toBe(LINE);
+		});
+
+		it("links a PDF with its extension", () => {
+			expect(originLine("Papers/Paper.pdf", true, "2026-11-13")).toBe("Sent from [[Papers/Paper.pdf|Paper]] on 2026-11-13");
+		});
+
+		it("names an origin that is gone as text", () => {
+			expect(originLine("Specs/Login-Spec.md", false, "2026-11-13")).toBe('Sent from "Login-Spec" on 2026-11-13 — no longer in the vault');
+		});
+
+		it("links a path a wikilink would break on with a Markdown link, escaping the brackets it shows", () => {
+			expect(originLine("Specs/C# notes.md", true, "2026-11-13")).toBe("Sent from [C# notes](<Specs/C# notes.md>) on 2026-11-13");
+			expect(originLine("Specs/Plan [draft].md", true, "2026-11-13")).toBe("Sent from [Plan \\[draft\\]](<Specs/Plan [draft].md>) on 2026-11-13");
+			for (const path of ["a^b.md", "a|b.md", "a]b.md"]) expect(originLine(path, true, "2026-11-13")).toMatch(/^Sent from \[.*\]\(<.*>\) on 2026-11-13$/);
+		});
+	});
+
+	it("puts the origin line first in the callout, above a Zotero line", () => {
+		const content = buildNoteContent({ ...sentFields(), zoteroLine: "Zotero: x" }, null);
+
+		expect(content).toContain("link back to this one.\n> Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13\n> Zotero: x\n\n![[");
+	});
+
+	describe("what the hand-edit check hashes (§11 P1)", () => {
+		it("leaves the origin line out, so Obsidian's rewrite of its link is no edit", () => {
+			const block = extractManagedBlock(buildNoteContent(sentFields(), null))!;
+			const renamed = block.replace("[[Specs/Login-Spec|", "[[Specs/Login|");
+
+			expect(blockHashOf(renamed)).toBe(managedBlockHash(sentFields()));
+			expect(managedBlockHash(sentFields({ originLine: 'Sent from "Login-Spec" on 2026-11-13 — no longer in the vault' }))).toBe(managedBlockHash(sentFields()));
+		});
+
+		it("still sees an edit anywhere else in the block", () => {
+			const block = extractManagedBlock(buildNoteContent(sentFields(), null))!;
+
+			expect(blockHashOf(block.replace("Some OCR text", "Some corrected text"))).not.toBe(managedBlockHash(sentFields()));
+		});
+
+		it("hashes a block without the line as before, a quoted Sent from in its text included", () => {
+			const fields = baseFields({ transcript: "> Sent from my phone" });
+			const block = extractManagedBlock(buildNoteContent(fields, null))!;
+
+			expect(managedBlockHash(fields)).toBe(hashString(block));
+			expect(blockHashOf(block.replace("my phone", "my tablet"))).not.toBe(managedBlockHash(fields));
+		});
+	});
+
+	describe("its name in the folder", () => {
+		it("takes the bare name while it is free", async () => {
+			expect(await writeNote(fakeStore(), "Reviews", sentFields())).toBe("Reviews/Login-Spec — marked up.md");
+		});
+
+		it("takes the send date when another document's note has the name", async () => {
+			const store = fakeStore({ "Reviews/Login-Spec — marked up.md": "an earlier copy's note" });
+
+			expect(await writeNote(store, "Reviews", sentFields())).toBe("Reviews/Login-Spec — marked up 2026-11-13.md");
+		});
+
+		it("goes on with the existing ladder when the dated name is taken too", async () => {
+			const store = fakeStore({ "Reviews/Login-Spec — marked up.md": "", "Reviews/Login-Spec — marked up 2026-11-13.md": "" });
+
+			expect(await writeNote(store, "Reviews", sentFields())).toBe("Reviews/Login-Spec — marked up 2026-11-13 (sync).md");
+		});
+
+		it("skips the date when this document's own note under its other tag has the name", async () => {
+			const store = fakeStore({ "Reviews/Login-Spec — marked up.md": "" });
+
+			expect(await writeNote(store, "Reviews", sentFields({ ownNotes: ["Reviews/Login-Spec — marked up.md"] }))).toBe("Reviews/Login-Spec — marked up (sync).md");
+		});
+
+		it("is the name a tag moved to another folder carries there", async () => {
+			const store = fakeStore({ "Reviews/Login-Spec — marked up.md": "" });
+
+			expect(await moveNote(store, "Reviews/Login-Spec — marked up.md", "Work", sentFields())).toBe("Work/Login-Spec — marked up.md");
+		});
 	});
 });

@@ -56,7 +56,7 @@ import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero
 import { markListed } from "./zotero-send";
 import { registerVaultSendCommands } from "./vault-send-plugin";
 import { noteScreenSeen } from "./vault-send-settings";
-import { dropExpired, markListedSends, remapOrigins } from "./vault-sends";
+import { applySyncMarks, dropExpired, markListedSends, remapOrigins } from "./vault-sends";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
 import { deletedBookOf, readwiseBookUrl } from "./readwise-links";
@@ -791,6 +791,8 @@ export default class TaggedSyncPlugin extends Plugin {
 						},
 						vaultName: () => this.app.vault.getName(),
 					}),
+					// The live map, not a copy: the run reads it, and what it finds comes back as marks.
+					vaultSends: () => this.data.vaultSends,
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -822,6 +824,8 @@ export default class TaggedSyncPlugin extends Plugin {
 				const now = this.nowIso();
 				this.data.vaultSends = dropExpired(markListedSends(this.data.vaultSends, result.documentIds, now), new Date(now));
 			}
+			// What the run found about each sent document, onto the same live map (§5).
+			this.data.vaultSends = applySyncMarks(this.data.vaultSends, result.sendMarks ?? {});
 			// The guess for *Tablet* (send spec §7): only a newer document than the one it came from moves it.
 			if (result.screenSeen) this.data.vaultSend = noteScreenSeen(this.data.vaultSend, result.screenSeen);
 

@@ -46,6 +46,7 @@ import { transcriptFingerprint } from "./transcript-store";
 import { OffOcrBackend } from "./off-ocr-backend";
 import { addTextLayer, type LayerReader } from "./text-layer";
 import { UnavailableOcrBackend, type VisionBatchResult, VisionOcrBackend } from "./vision-ocr-backend";
+import { applySyncMarks, type StoredVaultSends } from "./vault-sends";
 
 // The real pipeline runs in every test but one: every partial failure inside it is deliberately
 // caught, so a build that *throws* -- which the sync engine still has to survive -- can only be
@@ -3966,6 +3967,256 @@ describe("the screen the synced pages declared (send spec §7)", () => {
 	it("reports nothing when no rendered page declares a screen, or nothing was rendered", async () => {
 		expect((await syncOf([notebook("doc-1", NEWER, "plain")], { plain: PAGE_BYTES })).screenSeen).toBeNull();
 		expect((await syncOf([], {})).screenSeen).toBeNull();
+	});
+});
+
+describe("a document the vault sent (send spec §6, ADR 0002)", () => {
+	const SENT_AT = "2026-11-13T10:00:00.000Z";
+	const ORIGIN = "Specs/Login-Spec.md";
+	const NOTE = "Reviews/Login-Spec — marked up.md";
+	const sendOf = (overrides: Record<string, unknown> = {}): StoredVaultSends => ({
+		"doc-1": { origin: ORIGIN, kind: "note", sentAt: SENT_AT, name: "Login-Spec", folderId: "f-1", ...overrides },
+	});
+
+	/**
+	 * A note the vault printed, three pages on the tablet: ink on the first and the last, and by default
+	 * one page tag on the middle page, which carries none -- the user tags a page, not the document.
+	 */
+	async function sentPdf(opts: { rootHash?: string; hash?: string; tags?: string[]; pageTags?: { name: string; pageId: string }[]; ink?: Record<string, string>; parent?: string; extra?: Entry[] } = {}) {
+		return fakeApi({
+			rootHash: opts.rootHash ?? "root-1",
+			entries: [
+				documentEntry({ hash: opts.hash ?? "hash-1", fileType: "pdf", visibleName: "Login-Spec", parent: opts.parent ?? "", tags: (opts.tags ?? []).map((name) => ({ name, timestamp: 0 })) }),
+				...(opts.extra ?? []),
+			],
+			contentById: {
+				"doc-1": documentContent({
+					fileType: "pdf",
+					pageCount: 3,
+					cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }, { id: "p2", redir: 2 }]),
+					pageTags: (opts.pageTags ?? [{ name: "sync", pageId: "p1" }]).map((pageTag) => ({ ...pageTag, timestamp: 0 })),
+				}),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": opts.ink ?? { p0: "ink-0", p2: "ink-2" } },
+		});
+	}
+
+	/** The engine's deps as the plugin builds them: the record read live, the origin file in the vault. */
+	async function depsWith(api: SyncApi, tagFolderMap: Record<string, string>, record: { current: StoredVaultSends }, origin = ORIGIN) {
+		const deps = { ...baseDeps(api, tagFolderMap), vaultSends: () => record.current };
+		await deps.noteStore.write(origin, "# Login-Spec\n");
+		deps.noteStore.write.mockClear();
+		return deps;
+	}
+
+	it("brings a page tag back as one note for the whole document, the marks on its untagged pages included", async () => {
+		const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() });
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(Object.keys(result.index.rows)).toEqual([notebookSyncKey("doc-1", "sync")]);
+		expect(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath).toBe(NOTE);
+		expect(await embeddedPageCount(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toBe(3);
+		expect(vi.mocked(buildDigest).mock.calls.at(-1)![1].pages.map((page) => page.pageId)).toEqual(["p0", "p1", "p2"]);
+		expect(result.sendMarks).toEqual({ "doc-1": { promotedTags: ["sync"] } });
+	});
+
+	it("keeps the page-note rule for the same PDF when the vault did not send it", async () => {
+		const deps = baseDeps(await sentPdf(), { sync: "Reviews" });
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(Object.keys(result.index.rows)).toEqual([pageSyncKey("doc-1", "p1", "sync")]);
+		expect(result.index.rows[pageSyncKey("doc-1", "p1", "sync")].notePath).toBe("Reviews/Login-Spec — Page 2.md");
+		expect(result.sendMarks).toEqual({});
+	});
+
+	// §12 F1: the bar's total is the pre-scan's plan, and the run must walk the same one.
+	it("counts the whole document in the pre-scan, the steps the run then reports", async () => {
+		const onProgress = vi.fn();
+		const deps = { ...(await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() })), onProgress };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const working = workingMessages(onProgress);
+		expect(new Set(working.map((message) => message.total))).toEqual(new Set([3]));
+		expect(working.at(-1)).toMatchObject({ done: 3, total: 3 });
+	});
+
+	it("writes one note per mapped tag, each in its tag's folder", async () => {
+		const deps = await depsWith(await sentPdf({ tags: ["work"] }), { sync: "Reviews", work: "Work" }, { current: sendOf() });
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(Object.values(result.index.rows).map((row) => [row.tag, row.notePath])).toEqual([
+			["work", "Work/Login-Spec — marked up.md"],
+			["sync", NOTE],
+		]);
+	});
+
+	// §6.2: a date here would read as "another copy" -- it is the same copy under its other tag.
+	it("tells two tags routed to one folder apart by the tag, not by the date", async () => {
+		const deps = await depsWith(await sentPdf({ tags: ["work"] }), { sync: "Reviews", work: "Reviews" }, { current: sendOf() });
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(Object.values(result.index.rows).map((row) => row.notePath)).toEqual([NOTE, "Reviews/Login-Spec — marked up (sync).md"]);
+	});
+
+	it("names a name an earlier copy's note holds with the send date", async () => {
+		const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() });
+		await deps.noteStore.write(NOTE, "the earlier copy's note");
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath).toBe("Reviews/Login-Spec — marked up 2026-11-13.md");
+		expect(await deps.noteStore.read(NOTE)).toBe("the earlier copy's note");
+	});
+
+	it("names its origin in the callout, with a link that opens it", async () => {
+		const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() });
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await deps.noteStore.read(NOTE)).toContain("do not edit\n> Every sync rewrites this note. Keep your own thoughts in a separate note and link back to this one.\n> Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13\n");
+	});
+
+	// `[[C# notes]]` would be read as a link to the heading " notes" of a note called "C".
+	it("links an origin whose path holds # with a Markdown link", async () => {
+		const origin = "Specs/C# notes.md";
+		const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf({ origin }) }, origin);
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await deps.noteStore.read(NOTE)).toContain("> Sent from [C# notes](<Specs/C# notes.md>) on 2026-11-13\n");
+	});
+
+	describe("the document gate (§6.1)", () => {
+		it("does not open a reviewed document again when only something else on the account changed", async () => {
+			const record = { current: sendOf() };
+			const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, record);
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			record.current = applySyncMarks(record.current, first.sendMarks);
+			const api = await sentPdf({ rootHash: "root-2" });
+
+			await runSync({ ...deps, api }, first.index);
+
+			expect(api.getContent).not.toHaveBeenCalled();
+		});
+
+		// What the field is for: the listing has no page tags, so the row from one never matches it.
+		it("would open it on every sync without the page tags the last opening promoted", async () => {
+			const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() });
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			const api = await sentPdf({ rootHash: "root-2" });
+
+			await runSync({ ...deps, api }, first.index);
+
+			expect(api.getContent).toHaveBeenCalledTimes(2);
+		});
+
+		it("opens it when a folder tag is taken off, and orphans that tag's note", async () => {
+			const record = { current: sendOf() };
+			const folder = (tags: string[], hash: string) => collectionEntry({ hash, tags: tags.map((name) => ({ name, timestamp: 0 })) });
+			const deps = await depsWith(await sentPdf({ parent: "folder-1", extra: [folder(["work"], "folder-a")] }), { sync: "Reviews", work: "Work" }, record);
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			record.current = applySyncMarks(record.current, first.sendMarks);
+			// A folder tag moves the folder's hash, never the document's.
+			const api = await sentPdf({ rootHash: "root-2", parent: "folder-1", extra: [folder([], "folder-b")] });
+
+			const second = await runSync({ ...deps, api }, first.index);
+
+			expect(api.getContent).toHaveBeenCalled();
+			expect(second.index.rows[notebookSyncKey("doc-1", "work")].status).toBe("orphaned");
+			expect(second.index.rows[notebookSyncKey("doc-1", "sync")].status).toBe("active");
+		});
+	});
+
+	describe("the origin line (§6.3)", () => {
+		// §12 F5, and §11 P1: Obsidian rewrites the link inside the note when the origin is renamed with
+		// "Automatically update internal links" on. Hashed, that rewrite read as the user's own edit and
+		// the note was never written again.
+		it("still writes the note after Obsidian rewrote the link on a rename, and names the new path", async () => {
+			const record = { current: sendOf() };
+			const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, record);
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			await deps.noteStore.move(ORIGIN, "Specs/Login.md");
+			await deps.noteStore.write(NOTE, (await deps.noteStore.read(NOTE))!.replace("[[Specs/Login-Spec|", "[[Specs/Login|"));
+			record.current = { "doc-1": { ...(record.current["doc-1"] as object), origin: "Specs/Login.md" } };
+
+			const second = await runSync({ ...deps, api: await sentPdf({ rootHash: "root-2", hash: "hash-2" }) }, first.index);
+
+			expect([second.editedNotesSkipped, second.notesWritten]).toEqual([0, 1]);
+			expect(await deps.noteStore.read(NOTE)).toContain("> Sent from [[Specs/Login|Login]] on 2026-11-13\n");
+		});
+
+		it("still leaves the note alone when the user wrote anywhere else in its block", async () => {
+			const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() });
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			await deps.noteStore.write(NOTE, (await deps.noteStore.read(NOTE))!.replace("\n<!-- tagged-sync:end -->", "\nmy own words\n<!-- tagged-sync:end -->"));
+
+			const second = await runSync({ ...deps, api: await sentPdf({ rootHash: "root-2", hash: "hash-2" }) }, first.index);
+
+			expect([second.editedNotesSkipped, second.notesWritten]).toEqual([1, 0]);
+			expect(await deps.noteStore.read(NOTE)).toContain("my own words");
+		});
+
+		it("turns into the file's name once the origin is gone, at the next write and not before", async () => {
+			const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() });
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			await deps.noteStore.move(ORIGIN, "elsewhere.md"); // the fake store has no delete: gone from its path is what counts
+			deps.noteStore.write.mockClear();
+
+			const unchanged = await runSync({ ...deps, api: await sentPdf({ rootHash: "root-2" }) }, first.index);
+			expect(deps.noteStore.write).not.toHaveBeenCalled();
+			await runSync({ ...deps, api: await sentPdf({ rootHash: "root-3", hash: "hash-2" }) }, unchanged.index);
+
+			expect(await deps.noteStore.read(NOTE)).toContain('> Sent from "Login-Spec" on 2026-11-13 — no longer in the vault\n');
+		});
+	});
+
+	describe("Zotero (§6.4)", () => {
+		const pass = (seen: string[]): ZoteroPass => ({
+			run: async (unit) => {
+				seen.push(unit.docId);
+				return { line: null, links: {}, keys: {}, notices: [] };
+			},
+		});
+
+		it("never matches a note the vault printed", async () => {
+			const seen: string[] = [];
+			const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf() });
+
+			await runSync({ ...deps, zotero: pass(seen) }, EMPTY_SYNC_INDEX);
+
+			expect(seen).toEqual([]);
+			expect(deps.api.getPdf).toHaveBeenCalled(); // rendered all the same -- only the matching is left out
+		});
+
+		it("passes a PDF the vault sent through it like any PDF", async () => {
+			const seen: string[] = [];
+			const deps = await depsWith(await sentPdf(), { sync: "Reviews" }, { current: sendOf({ kind: "pdf", origin: "Papers/Login-Spec.pdf" }) }, "Papers/Login-Spec.pdf");
+
+			await runSync({ ...deps, zotero: pass(seen) }, EMPTY_SYNC_INDEX);
+
+			expect(seen).toEqual(["doc-1"]);
+			expect(await deps.noteStore.read(NOTE)).toContain("> Sent from [[Papers/Login-Spec.pdf|Login-Spec]] on 2026-11-13\n");
+		});
+	});
+
+	// §12 F12: the README's "tag it when you want it back" rests on what a copy nobody wrote on gives.
+	it("brings a tagged copy nobody wrote on back as the callout and the render, with no digest", async () => {
+		const deps = await depsWith(await sentPdf({ tags: ["sync"], pageTags: [], ink: {} }), { sync: "Reviews" }, { current: sendOf() });
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const note = (await deps.noteStore.read(NOTE))!;
+		expect(result.notesWritten).toBe(1);
+		expect(note).toContain("> Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13\n\n![[tagged-sync/attachments/doc-1.pdf]]\n");
+		expect(note).not.toContain("## Digest");
+		// For diagnostics only, as for any tagged PDF nobody wrote on: no notice says it.
+		expect(result.skipErrors).toContain('"Login-Spec" for tag "sync" was written with neither a digest nor a transcript');
 	});
 });
 
