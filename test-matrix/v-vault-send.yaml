@@ -3,6 +3,8 @@
 #
 # V1 is the page a note is printed on. The numbers were chosen on the tablet itself, over nine
 # printed rounds of a prototype; nothing here can see them on a screen, so every one is pinned.
+# V2 is the print itself, against a fake <webview>: the order, every bounded wait, every failure
+# reason. The real print is checked in the Demo vault by a script, not here.
 
 
 - feature: V1
@@ -149,3 +151,163 @@
       layer: unit
       file: src/note-print.test.ts
       test: "printStylesheet > places nothing left of the text column: a checkbox is pulled back no further than its list's own indent"
+
+
+- feature: V2
+  name: The print surface -- a dressed note in, PDF bytes out
+  code: src/print-surface.ts
+  tier: free
+  scenarios:
+    - id: V2.1
+      scenario: A note is printed
+      expect: The webview opens Obsidian's help page, the print waits for it, lays the note out, prints, and the webview is removed; no timer is left behind
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > opens the print page, waits for it, lays the note out, prints, and removes the webview"
+
+    - id: V2.2
+      scenario: The webview's size
+      expect: As wide as the text column and 1000 px high, off the screen -- heights measured in it are the printed heights
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives the webview the text column's width and a real height, off the screen"
+
+    - id: V2.3
+      scenario: The print's options
+      expect: The page's own size and margins, backgrounds, and both outline options -- the outline files the returned quotes under the note's headings
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > prints with the page's own options, the outline among them"
+
+    - id: V2.4
+      scenario: Obsidian runs without the webview tag
+      expect: "Reason: this Obsidian cannot print in the background; the element is removed again"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > says this Obsidian cannot print in the background when the element is no webview"
+
+    - id: V2.5
+      scenario: The print page does not open
+      expect: "After 15 s, reason: the print view did not open; nothing is run in it; the webview is removed"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives up after 15 s without dom-ready: the print view did not open"
+
+    - id: V2.6
+      scenario: The print page stops answering while the note is laid out
+      expect: After 30 s the send fails with a notice instead of hanging; nothing is printed
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives up on a print page that stops answering, and never prints"
+
+    - id: V2.7
+      scenario: A layout pass throws in the print page
+      expect: Its message is the reason; nothing is printed; no restart is asked for
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > passes on the message of a layout pass that threw, and never prints"
+
+    - id: V2.8
+      scenario: The print is refused on Electron 40 or later
+      expect: The error's message is the reason, without the restart sentence
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > passes on a refused print's message, without the restart sentence on Electron 40 and later"
+
+    - id: V2.22
+      scenario: The print is refused with something that is not an Error
+      expect: Its text is the reason, so the notice still says why
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > passes on a refusal that is not an Error as its text"
+
+    - id: V2.9
+      scenario: The print is refused below Electron 40
+      expect: The notice asks for a restart -- there one refused print blocks every later one until Obsidian restarts
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > asks for a restart after a refused print below Electron 40, where one refusal blocks every later print"
+
+    - id: V2.10
+      scenario: The print comes back empty
+      expect: "A failure, reason: the print came back empty -- nothing empty is sent"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > takes an empty answer from the print as a failure"
+
+    - id: V2.11
+      scenario: The print does not finish
+      expect: After 60 s the send fails with a notice instead of hanging
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives up on a print that does not finish in a minute"
+
+    - id: V2.12
+      scenario: A page with an impossible number
+      expect: Refused before a webview exists -- a refused print would block printing on old Electron
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > refuses a page with impossible numbers before it creates anything"
+
+    - id: V2.13
+      scenario: A second print while one runs
+      expect: "Refused with: Another send is still running. The first finishes, and the next print after it works"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > prints one note at a time: a second print while one runs is told another send is running"
+
+    - id: V2.14
+      scenario: What the print page is given
+      expect: The note, its title, the main window's body class (light) and style, its head styles, and our stylesheet last so it wins
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > carries the note, its title and the main window's look, light, with our stylesheet last"
+
+    - id: V2.15
+      scenario: Where the note sits in the print page
+      expect: In div.print -- the one wrapper Obsidian's print stylesheet shows -- under the public class tagged-sync-send
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > puts the note in div.print, the one wrapper Obsidian's print stylesheet shows, under the public class"
+
+    - id: V2.16
+      scenario: Images and fonts
+      expect: The print page waits for every image to load or fail and for the fonts, each wait bounded
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > waits for every image and for the fonts, each bounded"
+
+    - id: V2.17
+      scenario: The layout passes
+      expect: They run after images and fonts, on the note's view and the page, where the width is the printed width
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > runs the layout passes after the images and fonts, on the view and the page"
+
+    - id: V2.18
+      scenario: A note with quotes, backticks and line separators
+      expect: The script still parses, with and without layout passes
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > is a script that parses, with and without layout passes"
+
+    - id: V2.19
+      scenario: A dark vault
+      expect: theme-dark becomes theme-light and every other body class stays -- the tablet is a page
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "lightBodyClass > replaces theme-dark by theme-light and keeps every other class"
+
+    - id: V2.20
+      scenario: A light vault
+      expect: Stays light, with one theme-light
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "lightBodyClass > leaves a light body light, without a second theme-light"
+
+    - id: V2.21
+      scenario: Inside Obsidian
+      expect: The webview gets its attributes before it is attached to the active document; the look is read from that document, timers from its window
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "obsidianHost > attaches the webview to the active document and reads the look from it"
