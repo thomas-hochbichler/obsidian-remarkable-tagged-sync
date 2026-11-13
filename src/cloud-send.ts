@@ -115,8 +115,17 @@ export async function sendToCloud(api: CloudSendApi, document: SendDocument): Pr
  *
  * A failure anywhere rejects the whole look rather than classing one copy and not another; the send
  * then goes on and clears nothing (P17).
+ *
+ * `kept` -- the copies the user chose to keep -- are not classed or looked into (P15), only left out
+ * of the strangers.
  */
-export async function lookAtEarlierCopies(api: CloudSendApi, copies: readonly EarlierCopy[], folder: string, visibleName: string): Promise<EarlierCopyLook> {
+export async function lookAtEarlierCopies(
+	api: CloudSendApi,
+	copies: readonly EarlierCopy[],
+	folder: string,
+	visibleName: string,
+	kept: readonly string[] = [],
+): Promise<EarlierCopyLook> {
 	const items = await api.listItems();
 	const byId = new Map(items.map((item) => [item.id, item]));
 
@@ -132,8 +141,9 @@ export async function lookAtEarlierCopies(api: CloudSendApi, copies: readonly Ea
 	}
 
 	// The folder this send puts the new one into, and no other of that name: "beside it" is what the
-	// notice says. A copy of this origin is never a stranger, whatever its state.
-	const ours = new Set(copies.map((copy) => copy.docId));
+	// notice says. A copy of this origin is never a stranger, whatever its state -- a kept one included,
+	// which the notice already names as still there.
+	const ours = new Set([...copies.map((copy) => copy.docId), ...kept]);
 	const sendFolder = existingFolderIds(items, folder)[0];
 	const strangerNamed =
 		sendFolder !== undefined &&

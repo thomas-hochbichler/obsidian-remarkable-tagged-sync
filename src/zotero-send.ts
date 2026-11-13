@@ -81,8 +81,11 @@ export interface SendTransport {
 	 * What the vault's earlier copies of one origin are now, and whether the send folder holds a
 	 * stranger of the same name (send spec §3). Read, never written. Rejects as a whole when any part
 	 * of the look fails. The cloud only: over SSH nothing is inspected (05 #12).
+	 *
+	 * `kept` are the ids of the origin's copies the user chose to keep: never classed (P15), and never
+	 * a stranger either (ticket 25).
 	 */
-	earlierCopies?(copies: readonly EarlierCopy[], folder: string, visibleName: string): Promise<EarlierCopyLook>;
+	earlierCopies?(copies: readonly EarlierCopy[], folder: string, visibleName: string, kept: readonly string[]): Promise<EarlierCopyLook>;
 	/**
 	 * Moves one earlier copy to the tablet's trash -- never anywhere else, never for good (ADR 0001).
 	 * `false` when the copy changed since the look and so was left where it is. The cloud only.

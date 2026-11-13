@@ -128,11 +128,13 @@ describe("sending a PDF through the cloud", () => {
 			listItems: async () => [
 				{ id: "folder-1", visibleName: "Zotero", parent: "", type: "CollectionType" },
 				{ id: "doc-1", hash: "h-1", visibleName: "Prompting", parent: "folder-1", type: "DocumentType", pinned: false },
+				// A copy the user kept, handed on by id: no stranger.
+				{ id: "doc-2", hash: "h-2", visibleName: "Prompting", parent: "folder-1", type: "DocumentType", pinned: false },
 			],
 			getContent: async () => ({ pageTags: [] }),
 		}));
 
-		expect(await cloud.earlierCopies([{ docId: "doc-1", name: "Prompting", folderId: "folder-1" }], "Zotero", "Prompting")).toEqual({
+		expect(await cloud.earlierCopies([{ docId: "doc-1", name: "Prompting", folderId: "folder-1" }], "Zotero", "Prompting", ["doc-2"])).toEqual({
 			copies: [{ docId: "doc-1", state: "untouched", ref: { id: "doc-1", hash: "h-1" } }],
 			strangerNamed: false,
 			folderId: "folder-1",

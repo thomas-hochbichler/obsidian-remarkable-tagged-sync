@@ -55,8 +55,8 @@ export class CloudTransport implements Transport, SendTransport {
 	}
 
 	/** A vault send's look at its earlier copies (send spec §3); a session of its own, like the two above. */
-	async earlierCopies(copies: readonly EarlierCopy[], folder: string, visibleName: string): Promise<EarlierCopyLook> {
-		return await lookAtEarlierCopies(openSession(await this.auth.session()), copies, folder, visibleName);
+	async earlierCopies(copies: readonly EarlierCopy[], folder: string, visibleName: string, kept: readonly string[]): Promise<EarlierCopyLook> {
+		return await lookAtEarlierCopies(openSession(await this.auth.session()), copies, folder, visibleName, kept);
 	}
 
 	/** A vault send's clearing of one earlier copy (ADR 0001): to the trash, and only there. */

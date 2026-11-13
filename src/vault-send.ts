@@ -211,10 +211,11 @@ async function send<F extends VaultFile>(deps: VaultSendDeps<F>, file: F): Promi
 		deps.report("busy", `Tagged Sync: sending "${name}" to ${transport.label}…`);
 
 		// 4. The look, over the cloud only. A copy the user chose to keep is never asked about again (P15),
-		// so the transport -- which knows nothing of `kept` -- is never shown one.
+		// so the transport is never shown one to class -- only its id, so it is not taken for a stranger.
 		const before = copiesOf(deps.sends(), file.path);
 		const known = before.filter((copy) => copy.send.goneAt === undefined);
 		const looked = before.filter((copy) => copy.send.kept !== true);
+		const kept = before.filter((copy) => copy.send.kept === true).map((copy) => copy.docId);
 		// `null` after a look that failed (P17): the send goes on and clears nothing.
 		let look: EarlierCopyLook | null = null;
 		if (transport.earlierCopies !== undefined) {
@@ -223,6 +224,7 @@ async function send<F extends VaultFile>(deps: VaultSendDeps<F>, file: F): Promi
 					looked.map(({ docId, send }) => ({ docId, ...(send.name === undefined ? {} : { name: send.name }), ...(send.folderId === undefined ? {} : { folderId: send.folderId }) })),
 					deps.folder,
 					name,
+					kept,
 				);
 			} catch (error) {
 				console.warn("Tagged Sync: looking at the earlier copies failed", error);

@@ -359,6 +359,14 @@ describe("a document of the same name in the send folder that the vault did not 
 		expect((await lookAtEarlierCopies(api, [recorded()], "Zotero", SENT_AS)).strangerNamed).toBe(false);
 	});
 
+	// P15 keeps a kept copy out of the copies asked about; it is still this origin's own (ticket 25).
+	it("is never a copy the user chose to keep, which is not looked into either", async () => {
+		const { api, calls } = account([folder(), sentCopy({ id: "doc-k", hash: "hash-k", pinned: true })]);
+
+		expect(await lookAtEarlierCopies(api, [], "Zotero", SENT_AS, ["doc-k"])).toEqual({ copies: [], strangerNamed: false, folderId: "f-1" });
+		expect(calls).toEqual(["listItems"]);
+	});
+
 	it("is looked for only in the folder the new one goes into", async () => {
 		const second = { ...folder(), id: "f-9" } as Entry;
 		const elsewhere = [sentCopy({ id: "doc-x", parent: "f-other" }), sentCopy({ id: "doc-y", parent: "f-9" }), sentCopy({ id: "doc-z", parent: "trash" })];

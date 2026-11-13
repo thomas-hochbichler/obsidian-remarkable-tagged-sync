@@ -1009,6 +1009,13 @@
       file: src/cloud-send.test.ts
       test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is never one of this origin's own copies, whatever state they are in"
 
+    - id: V5.32
+      scenario: The only same-named document in the folder is a copy the user chose to keep, handed to the look by id only (ticket 25)
+      expect: No stranger, and the kept copy is not classed or looked into (P15) -- one listing, nothing more
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is never a copy the user chose to keep, which is not looked into either"
+
     - id: V5.18
       scenario: Same-named documents sit in another folder, in a second folder of the send folder's name, in the trash, and in an account without the folder
       expect: No stranger in any of them -- only the folder the new one goes into counts
@@ -1455,6 +1462,20 @@
       layer: unit
       file: src/vault-send.test.ts
       test: "a second send over the cloud (send spec §3) > adds the new one beside a document of the same name that is not ours, and says so"
+
+    - id: V7.37
+      scenario: A second send while the send folder holds a kept copy and an untouched one of this origin (ticket 20, step 5)
+      expect: The untouched one swapped, the kept one named as still there -- and no " A document of that name was already there." (ticket 25)
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > does not take a kept copy in the send folder for a document of that name"
+
+    - id: V7.38
+      scenario: The send folder holds a kept copy of this origin and a same-named document that is not ours
+      expect: The kept one named as still there, and the stranger sentence after it
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > still says so for a document of that name that is not ours, beside a kept copy"
 
     - id: V7.28
       scenario: Several things happen to the earlier copies in one send

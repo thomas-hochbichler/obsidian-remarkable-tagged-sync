@@ -38,6 +38,11 @@ interface Options {
 	tags?: string[];
 	/** What the look answers; a function to see what it was asked, an Error to reject. */
 	look?: EarlierCopyLook | Error | ((copies: readonly EarlierCopy[]) => EarlierCopyLook);
+	/**
+	 * The ids of the documents of the new one's name in the send folder. Given, the look answers
+	 * `strangerNamed` from them as the cloud does: any that is neither a copy asked about nor a kept one.
+	 */
+	sameNamed?: readonly string[];
 	/** What moving each copy to the trash answers, by id: `false` for "changed since", an Error to throw. Default `true`. */
 	trash?: Record<string, boolean | Error>;
 	/** The dialog's answer: `true` for the trash. Default: closed, which keeps. */
@@ -62,12 +67,15 @@ function harness(options: Options = {}): Harness {
 				h.uploads.push(document);
 				return { docId: "new-doc", folderId: "folder-1" };
 			}),
-		earlierCopies: async (copies) => {
+		earlierCopies: async (copies, _folder, _name, kept = []) => {
 			h.calls.push(`look ${copies.map((copy) => copy.docId).join(",")}`);
 			h.looked.push([...copies]);
 			const look = options.look ?? { copies: copies.map((copy) => ({ docId: copy.docId, state: "gone" as const })), strangerNamed: false };
 			if (look instanceof Error) throw look;
-			return typeof look === "function" ? look(copies) : look;
+			const answer = typeof look === "function" ? look(copies) : look;
+			if (options.sameNamed === undefined) return answer;
+			const ours = new Set([...copies.map((copy) => copy.docId), ...kept]);
+			return { ...answer, strangerNamed: options.sameNamed.some((id) => !ours.has(id)) };
 		},
 		moveToTrash: async (ref) => {
 			h.calls.push(`trash ${ref.id}`);
@@ -423,6 +431,20 @@ describe("a second send over the cloud (send spec §3)", () => {
 
 		expect(await sendFromVault(h.deps, NOTE)).toBe(`${SENT} A document of that name was already there. This one was added beside it.`);
 		expect(h.calls).toEqual(["look ", "putPdf Login-Spec"]);
+	});
+
+	// Ticket 20, step 5, live: the kept copy was named, then counted a second time as a stranger.
+	it("does not take a kept copy in the send folder for a document of that name", async () => {
+		const h = harness({ sends: { kept: earlier({ kept: true }), old: earlier() }, look: classed({ old: "untouched" }), sameNamed: ["kept", "old"] });
+
+		expect(await sendFromVault(h.deps, NOTE)).toBe(`${SENT} The earlier copy, which nobody had written on, is in the tablet's trash. The earlier copy with your marks is still there.`);
+		expect(h.looked[0].map((copy) => copy.docId)).toEqual(["old"]);
+	});
+
+	it("still says so for a document of that name that is not ours, beside a kept copy", async () => {
+		const h = harness({ sends: { kept: earlier({ kept: true }) }, sameNamed: ["kept", "manual-upload"] });
+
+		expect(await sendFromVault(h.deps, NOTE)).toBe(`${SENT} The earlier copy with your marks is still there. A document of that name was already there. This one was added beside it.`);
 	});
 
 	it("puts the additions in the table's order", async () => {
