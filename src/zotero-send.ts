@@ -115,6 +115,15 @@ export const MAX_TABLET_NAME = 120;
 const NAME_UNSAFE = /[/:]/g;
 
 /**
+ * Any text as a name the tablet takes: `/` and `:` become `-`, cut at {@link MAX_TABLET_NAME} code
+ * points, trimmed. `""` for text with nothing left in it -- the caller has the next candidate. The
+ * rule both kinds of send name a document by (send spec §1).
+ */
+export function safeTabletName(text: string): string {
+	return [...text.replace(NAME_UNSAFE, "-").trim()].slice(0, MAX_TABLET_NAME).join("").trim();
+}
+
+/**
  * What the document is called on the tablet: the parent item's title, or the attachment's filename.
  *
  * The item's title and not the attachment's, because the attachment's is usually "Full Text PDF" --
@@ -129,10 +138,9 @@ export function tabletName(item: ZoteroItem | null, attachment: ZoteroAttachment
 	// A trailing `.pdf` goes: a document on the tablet is a document, not a file, and the reMarkable's
 	// own upload drops it too. §2.3's matcher compares names with and without it either way.
 	const fallback = (attachment.filename ?? "").replace(/\.pdf$/i, "");
-	const named = [item?.title ?? "", fallback].map((part) => part.replace(NAME_UNSAFE, "-").trim()).find((part) => part !== "");
 	// The key is the last resort rather than one of the candidates: an item with no title and an
 	// attachment with no filename is rare, and a document called `ATT1` is at least findable again.
-	return [...(named ?? attachment.key)].slice(0, MAX_TABLET_NAME).join("").trim();
+	return [item?.title ?? "", fallback].map(safeTabletName).find((part) => part !== "") ?? safeTabletName(attachment.key);
 }
 
 /**

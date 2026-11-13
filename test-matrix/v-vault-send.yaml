@@ -17,6 +17,11 @@
 # live (ticket 20).
 # V6 is the guess for the *Tablet* setting: the screen the synced pages declare, the newest
 # document's winning, and the pick over both. The group's rows are I17, its loading A8.
+# V7 is one send end to end -- route, bytes, look, upload, record, clearing, notice -- with a fake
+# transport, printer and dialog; every sentence of spec §8 on its exact text. The status line is
+# H8. A real send over the cloud is checked in the Demo vault by a script (research/16-send-check/).
+# V8 is where a send is offered and what the plugin hands it: the command, the file menu, the real
+# dialog's buttons.
 
 
 - feature: V1
@@ -1202,3 +1207,319 @@
       layer: vault
       file: src/vault-send-wiring.test.ts
       test: "the screen a sync saw (send spec §7) > leaves the user's pick as it is"
+
+
+- feature: V7
+  name: One vault send, end to end
+  code: src/vault-send.ts
+  tier: free
+  scenarios:
+    - id: V7.1
+      scenario: A note is sent over the cloud
+      expect: 'Printed, uploaded into the send folder under the file''s name, recorded with origin, kind, time, name and folder id; notice "Sent \"Login-Spec\" to your reMarkable, into \"Obsidian\". " + the tag hint'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > prints a note, puts it in the send folder under the file's name, records it, and says where it went"
+
+    - id: V7.2
+      scenario: A PDF is sent
+      expect: Its bytes go up as they are; nothing is printed; recorded as kind pdf
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > sends a PDF as it is, without printing it"
+
+    - id: V7.3
+      scenario: A file name with a colon, 200 characters long
+      expect: The Zotero send's own rule -- `:` becomes `-`, cut at 120 code points
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > names the document through the tablet's own name rule: no / or :, at most 120 characters"
+
+    - id: V7.32
+      scenario: A file called `.md`, with nothing before its extension
+      expect: The document is called Untitled
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > calls a file with no name before its extension Untitled"
+
+    - id: V7.33
+      scenario: The print surface answers that it is busy
+      expect: '"Another send is still running." -- not a print failure with that sentence as its reason'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > says another send is running where the print surface is still busy with one"
+
+    - id: V7.4
+      scenario: A note with properties and nothing after them
+      expect: '"\"Login-Spec\" is empty. There is nothing to send." -- nothing printed, nothing asked of the tablet, nothing saved'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > refuses an empty note before anything touches the tablet"
+
+    - id: V7.5
+      scenario: The print fails
+      expect: '"\"Login-Spec\" could not be printed, so nothing was sent: <reason>." -- the tablet is never asked'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > says why a note could not be printed, and sends nothing"
+
+    - id: V7.6
+      scenario: A print refused below Electron 40
+      expect: The reason, its period, then "Restart Obsidian before you try again." -- a trailing period of the reason is not doubled
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > asks for a restart after the reason where a refused print blocks every later one"
+
+    - id: V7.7
+      scenario: The printer throws something that is no print failure
+      expect: Its message is the reason, and nothing goes up
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > passes on the message of a printer that threw something else"
+
+    - id: V7.8
+      scenario: Neither the cloud nor an SSH route is there
+      expect: The existing SEND_NEEDS_TRANSPORT sentence; nothing printed, nothing saved
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > says there is no route, and touches nothing"
+
+    - id: V7.9
+      scenario: The upload fails after the look found an untouched copy
+      expect: '"Sending to your reMarkable failed: <reason>"; nothing recorded, the earlier copy neither inspected further nor cleared'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > records nothing and clears nothing when the upload fails, and says why in the existing sentence"
+
+    - id: V7.10
+      scenario: A second send is started while one runs
+      expect: '"Another send is still running.", the status line left to the first; the next send after it goes'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > refuses a second send while one runs, and leaves the status line to the first"
+
+    - id: V7.11
+      scenario: A sync adds a record entry while the upload runs
+      expect: The new send is written into the record as it is then, so the sync's entry stays (spec §5)
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > writes into the record as it is after the upload, so an entry a sync added meanwhile stays"
+
+    - id: V7.12
+      scenario: One tag is mapped for sync
+      expect: 'Tag it, or any page of it, with "sync" on the tablet to bring your marks back as one note.'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > names the one mapped tag"
+
+    - id: V7.13
+      scenario: Two tags are mapped
+      expect: 'Tag it, or any page of it, with one of your sync tags ("sync", "work") on the tablet to bring your marks back as one note.'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > names several mapped tags"
+
+    - id: V7.14
+      scenario: Four tags are mapped
+      expect: The first three, then `…`
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > names at most three, then …"
+
+    - id: V7.15
+      scenario: No tag is mapped
+      expect: 'No tag is mapped for sync yet. Map one in the settings, then tag the document or any page of it to bring your marks back as one note.'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > says to map one where none is mapped"
+
+    - id: V7.16
+      scenario: A send with two tags mapped
+      expect: The hint ends the Sent sentence
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > ends the Sent sentence of every send"
+
+    - id: V7.17
+      scenario: The origin has two earlier copies, one of them without a recorded name or folder, and another origin has one
+      expect: One look before the upload, handed this origin's two with what the record knows of each
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > looks at the earlier copies before the upload, with the name and folder they were sent as"
+
+    - id: V7.18
+      scenario: The earlier copy is untouched
+      expect: Moved to the trash after the upload, no question; " The earlier copy, which nobody had written on, is in the tablet's trash."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > swaps an untouched copy into the trash after the upload, without a question"
+
+    - id: V7.19
+      scenario: Two untouched copies
+      expect: '" The 2 earlier copies, which nobody had written on, are in the tablet''s trash."'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > speaks of two untouched copies in the plural"
+
+    - id: V7.20
+      scenario: The earlier copy is gone
+      expect: Nothing cleared, nothing added to the notice
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > says nothing about a copy that is gone"
+
+    - id: V7.21
+      scenario: The earlier copy is the user's and the answer is Move it to the trash
+      expect: The dialog of §3 after the upload, word for word; the copy cleared; " The earlier copy is in the tablet's trash."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > asks about a copy of the user's after the upload, and clears it on Move it to the trash"
+
+    - id: V7.22
+      scenario: The earlier copy is the user's and the dialog is closed; then the note is sent again
+      expect: Kept and recorded as kept (P4); the next send does not show it to the look, never asks about it, and names it -- " The earlier copy with your marks is still there."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > keeps a copy of the user's when the dialog is closed, remembers it, and never asks about it again"
+
+    - id: V7.35
+      scenario: The user's copy is kept, but its entry left the record while the dialog was open (a sync dropped it)
+      expect: No entry is made for it -- the record is read live, and a mark describes a send, it does not make one
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > makes no entry for a kept copy whose entry left the record while the dialog was open"
+
+    - id: V7.23
+      scenario: Two copies of the user's
+      expect: One dialog, titled "has 2 earlier copies with your marks", buttons Keep them / Move them to the trash; the answer clears both
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > asks once about several copies of the user's, and the answer applies to all"
+
+    - id: V7.24
+      scenario: Clearing fails -- one copy changed since the look, one move throws
+      expect: The new document is recorded; " The 2 earlier copies could not be moved to the trash and are still there."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > records the new document and says the earlier copy is still there when clearing fails"
+
+    - id: V7.34
+      scenario: A transport that can look at earlier copies but has no trash
+      expect: The untouched copy stays, and the notice says it could not be moved to the trash
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > leaves the copy where it is, and says so, on a transport that can look but has no trash"
+
+    - id: V7.25
+      scenario: The look fails (P17)
+      expect: Uploaded and recorded, nothing cleared, no dialog; " The earlier copy could not be checked and is still there."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > still uploads and records when the look fails, clears nothing, asks nothing, and says so"
+
+    - id: V7.26
+      scenario: The look fails for an origin whose only copy the record knows to be gone
+      expect: No line about an earlier copy
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > says nothing of an earlier copy when a look fails for an origin with none"
+
+    - id: V7.27
+      scenario: The send folder holds a same-named document that is not this origin's
+      expect: Added beside it, never asked "send another copy?" (P12); " A document of that name was already there. This one was added beside it."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > adds the new one beside a document of the same name that is not ours, and says so"
+
+    - id: V7.28
+      scenario: Several things happen to the earlier copies in one send
+      expect: The additions follow in the order of spec §8's table
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > puts the additions in the table's order"
+
+    - id: V7.29
+      scenario: A second send over SSH
+      expect: No look, no clearing; " Over SSH nothing is replaced. The earlier copy is still there."
+      tier: pro
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over SSH (send spec §3, 05 #12) > looks at nothing, clears nothing, and says the earlier copy is still there"
+
+    - id: V7.30
+      scenario: Over SSH, the record knows one copy, one kept copy and one gone copy
+      expect: '" Over SSH nothing is replaced. The 2 earlier copies are still there."'
+      tier: pro
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over SSH (send spec §3, 05 #12) > speaks of every copy the record does not know to be gone, kept ones included, in the plural"
+
+    - id: V7.31
+      scenario: Over SSH, every copy the record knows is gone
+      expect: The Sent sentence alone
+      tier: pro
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over SSH (send spec §3, 05 #12) > says nothing more for an origin whose copies are all gone"
+
+
+- feature: V8
+  name: Where a vault send is offered, and what the plugin hands it
+  code: src/vault-send-plugin.ts
+  tier: free
+  scenarios:
+    - id: V8.1
+      scenario: The palette, with a note, a PDF, no file, a canvas, an image, an EPUB or a base active
+      expect: Send this file to reMarkable is offered for the note and the PDF only
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "where a vault send is offered (send spec §1) > offers the palette command only while a note or a PDF is the active file"
+
+    - id: V8.2
+      scenario: The file menu of a note, a PDF, a canvas and a folder
+      expect: Send to reMarkable on the note and the PDF, nothing on the others
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "where a vault send is offered (send spec §1) > puts Send to reMarkable in the file menu of a note or a PDF, and of nothing else"
+
+    - id: V8.3
+      scenario: The file menu of a note carrying zotero-key
+      expect: Both sends, the Zotero one first
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "where a vault send is offered (send spec §1) > shows both sends on a note that names a Zotero paper"
+
+    - id: V8.4
+      scenario: A PDF is sent from the file menu, the folder set to Inbox, two tags mapped
+      expect: The file's own bytes go into Inbox, the record lands in data.json and is saved, the notice names both tags
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > sends the file's bytes into the folder of the settings, records it in data.json and shows the notice"
+
+    - id: V8.7
+      scenario: The palette command runs with a PDF active
+      expect: That file is sent and one notice shown
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > sends the active file when the palette command runs"
+
+    - id: V8.8
+      scenario: A note is sent and Obsidian's renderer refuses
+      expect: The note went to printNote with Obsidian's render host; the renderer's message is the notice's reason and nothing is uploaded
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > hands a note to Obsidian's renderer, and sends nothing when it cannot print"
+
+    - id: V8.5
+      scenario: The dialog about the user's copy, as Obsidian draws it
+      expect: Keep it is the other button; Move it to the trash is drawn destructive and is not the call to action
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > asks about the user's copy with Keep it as the other button and the trash drawn as destructive, never as the call to action"
+
+    - id: V8.6
+      scenario: The dialog is closed with Escape
+      expect: The copy stays, is recorded as kept, and the notice says it is still there
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > keeps the user's copy when the dialog is closed with Escape"

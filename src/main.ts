@@ -54,6 +54,7 @@ import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
+import { registerVaultSendCommands } from "./vault-send-plugin";
 import { noteScreenSeen } from "./vault-send-settings";
 import { dropExpired, markListedSends, remapOrigins } from "./vault-sends";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
@@ -483,6 +484,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// The Pro half -- the desktop-app connection and write-back -- is refused in place where it
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
+		// Free as well (send spec §1): a note or a PDF from the vault onto the tablet.
+		registerVaultSendCommands(this.zoteroHost());
 
 		// Free: it only opens a book, and a lapsed licence must not take the way there from someone's library.
 		this.addCommand({

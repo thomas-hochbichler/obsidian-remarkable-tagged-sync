@@ -225,6 +225,13 @@
       file: src/status-model.test.ts
       test: "outcomeStatus > leaves no bar behind in any of the three"
 
+    - id: H8.21
+      scenario: A vault send runs, is refused, or fails (send spec §8)
+      expect: '"Tagged Sync: sending \"<name>\" to <route label>…", then "Tagged Sync: sent \"<name>\"" -- or "Tagged Sync: nothing sent" after no route, an empty note, a failed print or a failed upload'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the status line of a vault send (send spec §8) > names the route while it sends, then says sent -- or nothing sent after a refusal or a failure"
+
 - feature: H7
   name: Partial-outcome notices
   code: src/sync-notices.ts
