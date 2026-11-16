@@ -126,4 +126,4 @@ system.
   highlighted sentences, margin notes and pages you added, as text, each with a link back to its page that names your vault. The render carries its text layer, so the transcript goes along with it. See the
   README.
 
-*Last updated: 2026-11-04.*
+*Last updated: 2026-11-16.*
