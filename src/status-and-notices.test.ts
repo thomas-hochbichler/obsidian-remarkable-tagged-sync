@@ -450,6 +450,18 @@ describe("what a sync says when it finished but did not do everything", () => {
 		expect(takeNotices()).toEqual(["Synced 1 note(s)."]);
 	});
 
+	// Send spec §6.5: each is said once per sent copy and its flag is kept whether anyone watched or not,
+	// so a background run that kept quiet would lose it for good -- for anyone who only auto-syncs, always.
+	it("says what it found about a document the vault sent on a background run too, once", async () => {
+		const sentence = '"Login-Spec" has handwriting on it that was not read. Switch on "Your notes on PDFs" in the settings to get it as text.';
+		const plugin = await loadWith({ autoSync: { enabled: true, intervalHours: 6, autoTranscribeMetered: false } });
+		engine.result = { notesWritten: 1, editedNotesSkipped: 2, vaultSendNotices: [sentence] };
+
+		await (plugin as unknown as { triggerAutoSync(): Promise<void> }).triggerAutoSync();
+
+		expect(takeNotices()).toEqual(["Synced 1 note(s).", sentence]);
+	});
+
 	it("does not even say 'up to date' on a background run that found nothing", async () => {
 		// The one notice a background run must never raise: it would fire every six hours, forever,
 		// to report that nothing happened.

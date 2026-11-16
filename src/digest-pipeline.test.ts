@@ -297,6 +297,22 @@ describe("buildDigest without a text layer", () => {
 		expect(result.warnings).toEqual([]);
 	});
 
+	/**
+	 * What the sync tells the sender of a document with *Your notes on PDFs* off (send spec §6.5): the
+	 * handwriting is on the page and nowhere in the note. A stroke shaped like a mark is not counted --
+	 * it has its own line above, and the switch would not turn it into text.
+	 */
+	it("counts the handwriting it left unread with margin notes off, and not a stray mark", async () => {
+		const word = boxStroke("0a", 100, 2150, 8, 1);
+		const stray = boxStroke("0b", 100, 2150, 600, 1);
+
+		const off = await build([fixturePage(scene([word, stray]))], { loadText: async () => fixtureTextDocument(), marginNotes: false });
+		const on = await build([fixturePage(scene([word, stray]))], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr("a word", "") });
+
+		expect(off.unreadHandwriting).toBe(1);
+		expect(on.unreadHandwriting).toBe(0);
+	});
+
 	it("labels the page from its source index and says once that the text could not be read", async () => {
 		const result = await build([fixturePage()]);
 
@@ -1303,6 +1319,16 @@ describe("buildDigest on a page added on the device", () => {
 
 		expect(result.markdown).toBe("");
 		expect(ocr).not.toHaveBeenCalled();
+	});
+
+	// A blank page added for a longer remark is where a reviewer writes one (send spec §6.5).
+	it("counts its ink as handwriting left unread with handwritten notes off", async () => {
+		const page = { ...appendedPage(), scene: scene([boxStroke("0a", 100, 200, 8, 1), boxStroke("0b", 120, 200, 8, 1)]) };
+
+		const off = await build([page], { marginNotes: false });
+		const on = await build([page], { ocrBackend: fakeOcr("two words") });
+
+		expect([off.unreadHandwriting, on.unreadHandwriting]).toEqual([2, 0]);
 	});
 
 	// Issue #247: text typed on an added page never reached the note -- the backend was handed the ink alone.

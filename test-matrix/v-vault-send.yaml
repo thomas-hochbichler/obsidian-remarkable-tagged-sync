@@ -1,0 +1,1915 @@
+# Send from the vault (1.12.0): a note or a PDF from the vault onto the tablet, and the marks back
+# as one note that names its origin.
+#
+# V1 is the page a note is printed on. The numbers were chosen on the tablet itself, over nine
+# printed rounds of a prototype; nothing here can see them on a screen, so every one is pinned.
+# V2 is the print itself, against a fake <webview>: the order, every bounded wait, every failure
+# reason. The real print is checked in the Demo vault by a script, not here.
+# V3 is the note before the print: rendered by Obsidian, then dressed -- the markup passes on markup
+# the renderer really emitted (test-fixtures/rendered-notes/), the measuring passes on a layout set
+# by hand. Whether a real note prints like the prototype's round 9 is again a script's question.
+# V4 is the record of what the vault sent (data.json `vaultSends`): read entry by entry, aged by the
+# sync's listings, following its origins through renames. Its loading is in A8, the rename handler
+# that drives it in C13.
+# V5 is what the transports do for a second send: the look at the earlier copies and the move to the
+# trash, against a fake cloud that has only the members the send may call. The cloud transport's
+# own sessions for both are in A9; whether rmapi-js really refuses a changed copy is checked once
+# live (ticket 20).
+# V6 is the guess for the *Tablet* setting: the screen the synced pages declare, the newest
+# document's winning, and the pick over both. The group's rows are I17, its loading A8.
+# V7 is one send end to end -- route, bytes, look, upload, record, clearing, notice -- with a fake
+# transport, printer and dialog; every sentence of spec §8 on its exact text. The status line is
+# H8. A real send over the cloud is checked in the Demo vault by a script (research/16-send-check/).
+# V8 is where a send is offered and what the plugin hands it: the command, the file menu, the real
+# dialog's buttons.
+# V9 is what the sync does with a document the vault sent: one note per mapped tag for the whole
+# document, page tags included (ADR 0002), the document gate that keeps a reviewed one closed, the
+# origin line, Zotero. The origin line's place in the hand-edit check is G3. V10 is the note itself:
+# its name and the ladder after it, the origin line's three forms, and what is hashed.
+
+
+- feature: V1
+  name: A sent note's page, print options and stylesheet
+  code: src/note-print.ts
+  tier: free
+  scenarios:
+    - id: V1.1
+      scenario: A note is printed for a reMarkable 1, 2 or Paper Pure
+      expect: The page is that screen's physical size (6.21 × 8.28 in), the text column 486 px and the keep-whole limit 248 px -- so type has its real size on the device
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > prints on the reMarkable 1, 2 and Paper Pure's own screen, with a 486 px column"
+
+    - id: V1.2
+      scenario: A note is printed for a Paper Pro
+      expect: The page is the Paper Pro's screen (7.07 × 9.43 in), column 569 px, keep-whole limit 287 px. The 1/2 page shown there would be scaled up 14 %, to the size rejected on the tablet
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > prints on the Paper Pro's own screen, with a 569 px column"
+
+    - id: V1.3
+      scenario: The page size is derived
+      expect: From the renderer's own device frames, never a literal -- one place knows what a reMarkable screen is
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > takes the page from the renderer's device frames, not from a number of its own"
+
+    - id: V1.4
+      scenario: reMarkable 1/2 page at Normal
+      expect: Body 10 pt, code 7 pt, diagram type 8.5 pt
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets rm12 at normal in 10 pt, code in 7 pt and diagram type in 8.5 pt"
+
+    - id: V1.5
+      scenario: reMarkable 1/2 page at Large
+      expect: Body 12 pt, code 8.4 pt, diagram type 10.2 pt -- everything keeps its ratio to the body
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets rm12 at large in 12 pt, code in 8.4 pt and diagram type in 10.2 pt"
+
+    - id: V1.6
+      scenario: Paper Pro page at Normal
+      expect: Body 10 pt, code 7 pt, diagram type 8.5 pt -- the tablet changes the page, not the type
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets paperPro at normal in 10 pt, code in 7 pt and diagram type in 8.5 pt"
+
+    - id: V1.7
+      scenario: Paper Pro page at Large
+      expect: Body 12 pt, code 8.4 pt, diagram type 10.2 pt
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > sets paperPro at large in 12 pt, code in 8.4 pt and diagram type in 10.2 pt"
+
+    - id: V1.8
+      scenario: Toolbar on the right is off
+      expect: Left 0.75 in (clears the toolbar), right 0.40 in, top and bottom 0.45 in
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > keeps the wide margin on the left, where the toolbar is"
+
+    - id: V1.9
+      scenario: Toolbar on the right is on (left-handed mode), on either tablet
+      expect: Left and right swap and nothing else changes; the column stays as wide
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printPage > swaps only left and right for a tablet in left-handed mode"
+
+    - id: V1.10
+      scenario: The options for printToPDF are built
+      expect: Page and margins in inches, backgrounds printed, generateDocumentOutline and generateTaggedPDF both on -- the outline needs both, and it is what files returned quotes under the note's headings
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > passes the page and margins in inches, the background, and both outline options"
+
+    - id: V1.11
+      scenario: A page or margin is NaN
+      expect: Refused before the call. On Electron 21-39 one rejected print blocks all PDF printing until Obsidian restarts
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of NaN before Electron sees it"
+
+    - id: V1.12
+      scenario: A page or margin is infinite
+      expect: Refused before the call, for the same reason
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of Infinity before Electron sees it"
+
+    - id: V1.13
+      scenario: A page or margin is zero
+      expect: Refused before the call
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of 0 before Electron sees it"
+
+    - id: V1.14
+      scenario: A page or margin is negative
+      expect: Refused before the call
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses a page or margin of -1 before Electron sees it"
+
+    - id: V1.15
+      scenario: The margins together reach the page's width or height
+      expect: Refused -- a page with no room for text is a rejected print
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printOptions > refuses margins that leave no room for text"
+
+    - id: V1.16
+      scenario: The print stylesheet is built
+      expect: Every rule is scoped to `.print` and the printed note's public class, so it cannot reach anything outside the printed note
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > scopes every rule to the print wrapper and the printed note"
+
+    - id: V1.17
+      scenario: Normal and Large
+      expect: The note's body at 10 / 12 pt with line height 1.45, code at 7 / 8.4 pt with 1.35
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > sets the body size and line height on the note, and code in its own size"
+
+    - id: V1.18
+      scenario: Headings, paragraphs, code, tables and images in print
+      expect: Headings stay with what follows, orphans and widows of 3, code wraps, tables get content-sized columns at 0.78 em with the size reaching the cells, images and diagrams never wider than the column
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > keeps headings with what follows, wraps code and sizes tables by their content"
+
+    - id: V1.19
+      scenario: A caption, a missing embed, a short block
+      expect: Each has its rule under its class -- caption 0.85 em, the missing embed small and grey, a short block kept whole
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > styles the caption, the missing embed and the kept-whole block by their classes"
+
+    - id: V1.20
+      scenario: Anything the stylesheet might push left of the column
+      expect: The only negative length is a task checkbox pulled back into its list's own indent -- the strip left of the column is under the tablet's toolbar
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > places nothing left of the text column: a checkbox is pulled back no further than its list's own indent"
+
+    - id: V1.21
+      scenario: A note that embeds another note
+      expect: The embedded note prints at the note's own size and without margins of its own -- it is a reading view of its own, and at Obsidian's 16 px it printed half again as large and a column narrower
+      layer: unit
+      file: src/note-print.test.ts
+      test: "printStylesheet > prints an embedded note at the note's own size, without its own margins"
+
+
+- feature: V2
+  name: The print surface -- a dressed note in, PDF bytes out
+  code: src/print-surface.ts
+  tier: free
+  scenarios:
+    - id: V2.1
+      scenario: A note is printed
+      expect: The webview opens Obsidian's help page, the print waits for it, lays the note out, prints, and the webview is removed; no timer is left behind
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > opens the print page, waits for it, lays the note out, prints, and removes the webview"
+
+    - id: V2.2
+      scenario: The webview's size
+      expect: As wide as the text column and 1000 px high, off the screen -- heights measured in it are the printed heights
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives the webview the text column's width and a real height, off the screen"
+
+    - id: V2.3
+      scenario: The print's options
+      expect: The page's own size and margins, backgrounds, and both outline options -- the outline files the returned quotes under the note's headings
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > prints with the page's own options, the outline among them"
+
+    - id: V2.4
+      scenario: Obsidian runs without the webview tag
+      expect: "Reason: this Obsidian cannot print in the background; the element is removed again"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > says this Obsidian cannot print in the background when the element is no webview"
+
+    - id: V2.5
+      scenario: The print page does not open
+      expect: "After 15 s, reason: the print view did not open; nothing is run in it; the webview is removed"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives up after 15 s without dom-ready: the print view did not open"
+
+    - id: V2.6
+      scenario: The print page stops answering while the note is laid out
+      expect: After 30 s the send fails with a notice instead of hanging; nothing is printed
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives up on a print page that stops answering, and never prints"
+
+    - id: V2.7
+      scenario: A layout pass throws in the print page
+      expect: Its message is the reason; nothing is printed; no restart is asked for
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > passes on the message of a layout pass that threw, and never prints"
+
+    - id: V2.8
+      scenario: The print is refused on Electron 40 or later
+      expect: The error's message is the reason, without the restart sentence
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > passes on a refused print's message, without the restart sentence on Electron 40 and later"
+
+    - id: V2.22
+      scenario: The print is refused with something that is not an Error
+      expect: Its text is the reason, so the notice still says why
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > passes on a refusal that is not an Error as its text"
+
+    - id: V2.9
+      scenario: The print is refused below Electron 40
+      expect: The notice asks for a restart -- there one refused print blocks every later one until Obsidian restarts
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > asks for a restart after a refused print below Electron 40, where one refusal blocks every later print"
+
+    - id: V2.10
+      scenario: The print comes back empty
+      expect: "A failure, reason: the print came back empty -- nothing empty is sent"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > takes an empty answer from the print as a failure"
+
+    - id: V2.11
+      scenario: The print does not finish
+      expect: After 60 s the send fails with a notice instead of hanging
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > gives up on a print that does not finish in a minute"
+
+    - id: V2.12
+      scenario: A page with an impossible number
+      expect: Refused before a webview exists -- a refused print would block printing on old Electron
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > refuses a page with impossible numbers before it creates anything"
+
+    - id: V2.13
+      scenario: A second print while one runs
+      expect: "Refused with: Another send is still running. The first finishes, and the next print after it works"
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "printHtmlToPdf > prints one note at a time: a second print while one runs is told another send is running"
+
+    - id: V2.14
+      scenario: What the print page is given
+      expect: The note, its title, the main window's body class (light) and style, its head styles, and our stylesheet last so it wins
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > carries the note, its title and the main window's look, light, with our stylesheet last"
+
+    - id: V2.15
+      scenario: Where the note sits in the print page
+      expect: In div.print -- the one wrapper Obsidian's print stylesheet shows -- under the public class tagged-sync-send
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > puts the note in div.print, the one wrapper Obsidian's print stylesheet shows, under the public class"
+
+    - id: V2.16
+      scenario: Images and fonts
+      expect: The print page waits for every image to load or fail and for the fonts, each wait bounded
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > waits for every image and for the fonts, each bounded"
+
+    - id: V2.17
+      scenario: The layout passes
+      expect: They run after images and fonts, on the note's view and the page, where the width is the printed width
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > runs the layout passes after the images and fonts, on the view and the page"
+
+    - id: V2.18
+      scenario: A note with quotes, backticks and line separators
+      expect: The script still parses, with and without layout passes
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "pageScript > is a script that parses, with and without layout passes"
+
+    - id: V2.19
+      scenario: A dark vault
+      expect: theme-dark becomes theme-light and every other body class stays -- the tablet is a page
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "lightBodyClass > replaces theme-dark by theme-light and keeps every other class"
+
+    - id: V2.20
+      scenario: A light vault
+      expect: Stays light, with one theme-light
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "lightBodyClass > leaves a light body light, without a second theme-light"
+
+    - id: V2.21
+      scenario: Inside Obsidian
+      expect: The webview gets its attributes before it is attached to the active document; the look is read from that document, timers from its window
+      layer: unit
+      file: src/print-surface.test.ts
+      test: "obsidianHost > attaches the webview to the active document and reads the look from it"
+
+
+- feature: V3
+  name: A note as a print document -- rendered, dressed, printed
+  code: src/note-document.ts
+  tier: free
+  scenarios:
+    - id: V3.1
+      scenario: A note with properties and nothing else, or nothing at all
+      expect: Empty -- only whitespace follows the properties, with Unix or Windows line ends, also with empty properties
+      layer: unit
+      file: src/note-document.test.ts
+      test: "isEmptyNote > calls a note empty when nothing but whitespace follows its properties"
+
+    - id: V3.2
+      scenario: A note that shows something
+      expect: Not empty -- an image alone counts, and an unclosed `---` is a rule, not properties
+      layer: unit
+      file: src/note-document.test.ts
+      test: "isEmptyNote > does not call a note empty that shows anything, an image alone included"
+
+    - id: V3.3
+      scenario: A note with properties is dressed
+      expect: The file's name is an h1 on top; the renderer's hidden properties block is gone, so it neither prints nor counts as the first block
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > puts the file's name on top as an h1, and drops the hidden properties block"
+
+    - id: V3.4
+      scenario: A note that starts with its own h1
+      expect: That h1 is the only title -- never two
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > gives a note that starts with its own h1 that title only"
+
+    - id: V3.5
+      scenario: A note that is only an image
+      expect: It gets the file's name as its title, and the image stays
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > titles a note whose first block is no h1, even one holding only an image"
+
+    - id: V3.6
+      scenario: A file name with < or &
+      expect: The title is text, never markup
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > writes the title as text, never as markup"
+
+    - id: V3.7
+      scenario: A note embeds a PDF (whole or one page), audio, video and a canvas
+      expect: Each becomes one small line, "<file> (not included)" -- no viewer, player or cut-off drawing on the page
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > replaces each PDF, audio, video and canvas embed by one line naming its file"
+
+    - id: V3.8
+      scenario: An embed whose target is missing, an image, an embedded note
+      expect: "The missing note and the missing file each become one line, `<name> (not found)` -- Obsidian's own box would print its UI sentence \"… Klicken zum Erstellen\", a click the paper cannot take; images and embedded notes print"
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > says 'not found' for an embed whose target does not exist, and keeps every image and embedded note"
+
+    - id: V3.9
+      scenario: A PDF in a subfolder, embedded inside an embedded note
+      expect: Replaced as well, named without its folder or page
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > names an embedded file without its folder, and finds one inside an embedded note"
+
+    - id: V3.34
+      scenario: An unprintable embed without a link
+      expect: The line still says what is missing -- "An embedded file (not included)", never a bare "(not included)"
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > still says what is missing for an embed without a link"
+
+    - id: V3.10
+      scenario: Internal links, web links and tags
+      expect: Internal links -- wikilink, alias, heading, unresolved, Markdown -- lose their address and stay text; web links and tags keep theirs
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > takes the address off every internal link and leaves web links and tags as they are"
+
+    - id: V3.11
+      scenario: Emphasis in a paragraph of its own under an image or a diagram
+      expect: It is the figure's caption and gets the caption class
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > marks a paragraph of nothing but emphasis right after an image or a diagram as its caption"
+
+    - id: V3.12
+      scenario: Emphasis on the line right under an image, in the image's own paragraph
+      expect: The emphasis is the caption too
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > marks emphasis on the line right under an image, which Markdown keeps in the image's paragraph"
+
+    - id: V3.13
+      scenario: Emphasis that is no caption
+      expect: Not marked -- after a text paragraph, mixed with text, under words, or two emphases
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > takes no other emphasis for a caption: after a paragraph, mixed with text, or without an image before it"
+
+    - id: V3.14
+      scenario: A note that opens with emphasis
+      expect: Not a caption -- the title above it is no figure
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > takes no caption for emphasis that opens a note: the title above it is no figure"
+
+    - id: V3.15
+      scenario: The renderer's output for an empty note
+      expect: The title alone
+      layer: unit
+      file: src/note-document.test.ts
+      test: "dressNote > dresses an empty note into its title alone"
+
+    - id: V3.16
+      scenario: A Mermaid diagram in print
+      expect: Sized so its labels come out at the diagram size (8.5 pt at Normal), not stretched to the column
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > sizes a diagram by its type, so its labels print at the diagram size"
+
+    - id: V3.17
+      scenario: A wide diagram
+      expect: Never wider than the column
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > never sizes a diagram wider than the column"
+
+    - id: V3.18
+      scenario: A diagram without a viewBox or a readable label
+      expect: Left as Obsidian drew it
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > leaves a diagram alone that has no viewBox or no label"
+
+    - id: V3.19
+      scenario: A top-level task list
+      expect: Shifted so its first box starts 5 px inside the column -- on the edge the print cut its left border off
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > shifts a top-level task list so its first box starts 5 px inside the column"
+
+    - id: V3.20
+      scenario: Padding on the view, a nested task list, a list without a box
+      expect: The column starts inside the padding; nested lists and box-less lists keep their indent
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > counts the view's own padding as outside the column, and leaves nested lists and lists without a box alone"
+
+    - id: V3.21
+      scenario: Code, a table, a callout, an image, a diagram, a quote -- short and long
+      expect: Shorter than the keep-whole limit -> kept on one page; at the limit or longer -> may split
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutPasses > keeps a block shorter than the keep-whole limit on one page and lets a longer one split"
+
+    - id: V3.22
+      scenario: The layout passes travel to the print page as text
+      expect: Their source runs on its own, with nothing from the module but the class names it is handed
+      layer: unit
+      file: src/note-document.test.ts
+      test: "layoutSource > runs on its own, outside this module, with the class names handed in"
+
+    - id: V3.23
+      scenario: A note is rendered
+      expect: At the column's width, then 400 ms to settle, then dressed; the markup is read before the component unloads and the view is removed
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > renders at the column's width, settles, dresses, and hands back the markup before it unloads and removes the view"
+
+    - id: V3.24
+      scenario: A note with Mermaid blocks
+      expect: The render waits until each block holds its drawing, then settles
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > waits for the note's diagrams to be drawn before it settles"
+
+    - id: V3.25
+      scenario: A diagram that never draws
+      expect: The wait ends after 6 s and the note prints without it -- every wait is bounded
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > gives up on diagrams after 6 s and prints what is there"
+
+    - id: V3.26
+      scenario: Diagrams drawn by the time the render's promise settles
+      expect: No wait beyond the settling pause
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > does not wait for diagrams that are drawn already"
+
+    - id: V3.27
+      scenario: The render throws
+      expect: The off-screen view is removed all the same
+      layer: unit
+      file: src/note-document.test.ts
+      test: "renderNote > removes the view when the render throws, with nothing to unload"
+
+    - id: V3.28
+      scenario: A note is printed
+      expect: On the chosen tablet's page, the PDF titled by the file's name, with the layout passes handed to the print surface
+      layer: unit
+      file: src/note-document.test.ts
+      test: "printNote > prints the dressed note on the chosen tablet's page, titled by the file, with the layout passes"
+
+    - id: V3.29
+      scenario: The render of a note to be sent throws
+      expect: A print failure with the render's message, so the send's notice says it; nothing is printed
+      layer: unit
+      file: src/note-document.test.ts
+      test: "printNote > turns a render that threw into a print failure with its message, and prints nothing"
+
+    - id: V3.30
+      scenario: Inside Obsidian, the view
+      expect: A reading view off-screen in the active document, at the column's width
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > renders off-screen in the active document, as a reading view at the column's width"
+
+    - id: V3.31
+      scenario: Inside Obsidian, the render
+      expect: MarkdownRenderer.render under a Component loaded before, unloaded after the markup was read
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > renders under a loaded component and hands back its unload"
+
+    - id: V3.32
+      scenario: Inside Obsidian, a render that throws
+      expect: The component is unloaded, the error passed on
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > unloads the component itself when the render throws"
+
+    - id: V3.33
+      scenario: Inside Obsidian, the waits
+      expect: On the active window's timers, the window the note is rendered in
+      layer: unit
+      file: src/note-document.test.ts
+      test: "obsidianRenderHost > sleeps on the active window's timers and tells the time"
+
+
+- feature: V4
+  name: The record of a send -- which tablet documents the vault sent, and from which file
+  code: src/vault-sends.ts
+  tier: free
+  scenarios:
+    - id: V4.1
+      scenario: A send with every field of spec §5 is written and read back
+      expect: Exactly what was stored
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > reads back exactly what was stored, every field of spec §5"
+
+    - id: V4.2
+      scenario: Nothing is stored for the document
+      expect: Null, never a throw
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for nothing stored"
+
+    - id: V4.3
+      scenario: The entry is a string
+      expect: No send is read, and nothing throws
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for a string"
+
+    - id: V4.4
+      scenario: The entry is an array
+      expect: No send is read, and nothing throws
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for an array"
+
+    - id: V4.5
+      scenario: The entry is null
+      expect: No send is read, and nothing throws
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for null"
+
+    - id: V4.6
+      scenario: The entry has no origin
+      expect: Null -- origin, kind and send time are what make an entry a send
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for an entry without an origin"
+
+    - id: V4.7
+      scenario: The entry names a kind this build does not send, written by a newer one
+      expect: Null, and the entry stays in the map
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for a kind this build does not know"
+
+    - id: V4.8
+      scenario: The send time does not parse
+      expect: Null -- a time nobody can compare decides no lifetime
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > answers null for a send time that is no time"
+
+    - id: V4.9
+      scenario: An entry's name or folder id is unreadable
+      expect: Read without them, so the "untouched" test of spec §3 cannot pass and the copy counts as the user's -- the safe side
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > reads an entry that lost its name or folder, without them -- the copy then counts as the user's"
+
+    - id: V4.10
+      scenario: The promoted-tag list holds things that are not strings
+      expect: Only the strings are read
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "reading a send > keeps only the strings of a promoted-tag list"
+
+    - id: V4.11
+      scenario: Is a document covered by the record
+      expect: Yes for a document the vault sent, no for any other -- the one test behind "is this copy ours" and "one note for the whole document"
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > covers a document the vault sent, and no other"
+
+    - id: V4.12
+      scenario: The document's entry was written by an install this build cannot read
+      expect: Covered all the same. Read as a stranger, one document would give page notes on this machine and one note on the other
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > covers a document whose entry this build cannot read"
+
+    - id: V4.13
+      scenario: A document id that is a key of Object's prototype
+      expect: Not covered -- only the map's own entries count
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > does not take a key of the map's prototype for an entry"
+
+    - id: V4.14
+      scenario: The record holds two copies of one origin, one of another, and an unreadable entry naming the same path
+      expect: The two copies, oldest first; nothing else
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what the record covers > finds every earlier copy of one origin, oldest first, and nothing of another"
+
+    - id: V4.15
+      scenario: An entry carries a field a newer build wrote, and this build writes the entry
+      expect: The unknown field survives the write
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "writing a send > carries the fields a newer build wrote on the same entry"
+
+    - id: V4.16
+      scenario: Another entry is written beside one this build cannot read
+      expect: The unreadable entry stays exactly as it was
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "writing a send > leaves an entry it cannot read where it is when another is written"
+
+    - id: V4.17
+      scenario: A send is written
+      expect: A new map; the one handed in is untouched
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "writing a send > does not write through the map it was given"
+
+    - id: V4.18
+      scenario: A sync's listing finds a sent document
+      expect: Marked seen
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > marks a listed copy seen"
+
+    - id: V4.19
+      scenario: A sync's listing misses a document no listing has found yet
+      expect: Neither seen nor gone -- the listing lags the upload (seen live 2026-09-12)
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > leaves a copy no listing has found yet alone -- the listing lags the upload"
+
+    - id: V4.20
+      scenario: A listing misses a document an earlier listing found
+      expect: Marked gone at that time
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > marks a copy gone once a listing misses it after having found it"
+
+    - id: V4.21
+      scenario: A later listing misses a document already marked gone
+      expect: The first miss stays the time it went, so the 30 days are not pushed back
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > keeps the first miss as the time it went"
+
+    - id: V4.22
+      scenario: A document marked gone is listed again
+      expect: The gone mark is taken off and it is seen -- restored from the tablet's trash
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > takes the gone mark off a copy that turns up again -- restored from the trash"
+
+    - id: V4.23
+      scenario: A listing runs over an entry this build cannot read
+      expect: Untouched
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > leaves an entry it cannot read untouched"
+
+    - id: V4.24
+      scenario: No listing has found a sent copy yet, 23 hours and then 24 hours after the send
+      expect: Still on the tablet inside the day's grace, not after it -- the grace a Zotero send gets
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > is still on the tablet a day after the send while no listing has found it, and not after"
+
+    - id: V4.25
+      scenario: A copy was seen long ago, or was marked gone
+      expect: On the tablet while seen, however long ago; not once gone
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync listing says (spec §5) > is on the tablet once seen, however long ago, and not once gone"
+
+    - id: V4.26
+      scenario: A gone copy's entry, an hour short of 30 days later
+      expect: Kept, so a copy restored from the trash inside the month is still the vault's own (§11 P5)
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > keeps a gone copy for 30 days, so one restored from the trash is still the vault's own"
+
+    - id: V4.27
+      scenario: A gone copy's entry, 30 days after it went
+      expect: Dropped
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > drops it 30 days after it went"
+
+    - id: V4.28
+      scenario: A copy still listed, a year after its send
+      expect: Kept -- only absence ages an entry
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > keeps a copy that is still on the tablet, however old its send"
+
+    - id: V4.29
+      scenario: A copy no listing ever found, short of and at 30 days after the send
+      expect: Kept, then dropped. It never earns a gone mark, so its age is counted from the send
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > drops a copy no listing ever found 30 days after its send -- it never earns a gone mark"
+
+    - id: V4.30
+      scenario: An unreadable entry carries old dates
+      expect: Never dropped -- it has no date this build can trust
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "how long an entry lives (spec §11 P5) > never drops an entry it cannot read -- it has no date to trust"
+
+    - id: V4.31
+      scenario: The origin is renamed
+      expect: The entry names the new path
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > follows a renamed origin"
+
+    - id: V4.32
+      scenario: A folder with two origins below it, one nested, is renamed; a sibling folder's name starts the same
+      expect: Both origins below it follow; the sibling's does not
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > follows every origin below a renamed folder, and only those"
+
+    - id: V4.33
+      scenario: Some other file is renamed
+      expect: Null, which is how the caller learns not to write data.json
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > answers null for a rename of something else"
+
+    - id: V4.34
+      scenario: An entry this build cannot otherwise read names an origin under a renamed folder
+      expect: Its origin follows and the rest of it stays -- whichever install reads it later finds the path current
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > moves the origin of an entry it cannot otherwise read, and keeps the rest of it"
+
+    - id: V4.35
+      scenario: A rename meets an entry that is no record at all
+      expect: Left exactly as it was
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "following the origin through renames (spec §5) > leaves an entry without an origin where it is"
+
+    - id: V4.36
+      scenario: A sync hands back marks for a document whose origin was renamed meanwhile
+      expect: The marks are set on the live entry; the new origin and unknown fields stay
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync hands back (spec §5) > sets the marks on the live entry and keeps everything else on it"
+
+    - id: V4.37
+      scenario: A send was recorded while the sync ran
+      expect: It is still in the map after the marks are applied
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync hands back (spec §5) > keeps a send recorded while the sync ran"
+
+    - id: V4.38
+      scenario: A sync hands back marks for a document that has no entry by then
+      expect: No entry is made -- marks describe a send, they do not make one
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "what a sync hands back (spec §5) > makes no entry for a document that has none by then"
+
+
+- feature: V5
+  name: A second send -- what the earlier copy is now, and the trash
+  code: src/cloud-send.ts
+  tier: free
+  scenarios:
+    - id: V5.1
+      scenario: An upload goes into a folder that was there, and into one it made
+      expect: The answer names that folder's id either way -- the record keeps it, and a copy is untouched only while it is still in it
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "the cloud's Zotero folder > is named in the answer, whether it was there or made"
+
+    - id: V5.30
+      scenario: A vault send hands the upload the folder id its look just found
+      expect: The document goes into that folder; the account is not listed again and no folder is made -- one listing per send, not two (~7 s in Obsidian)
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "the cloud's Zotero folder > is the one a look handed in, without listing the account again"
+
+    - id: V5.31
+      scenario: The look's listing holds the send folder twice, nested folders of that name, or none
+      expect: The lowest top-level id, the one the upload's own lookup would pick; nothing where there is no such folder, so the upload makes it as before
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "the send folder as the look found it (ticket 16: one listing per vault send) > is named by its id -- the lowest of two, as the upload would pick -- and not at all where the account has none"
+
+    - id: V5.2
+      scenario: The earlier copy is listed where and as what it was sent, unpinned, with no tag, no page tag and no .rm file
+      expect: Untouched, with the listing's id and hash; exactly one listing, one getContent and one getEntries were made
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is untouched where the listing, the page tags and the files all say nobody was there"
+
+    - id: V5.3
+      scenario: The listing does not show the copy -- sent a minute ago, or deleted on the tablet
+      expect: Gone, and nothing but the listing was asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is gone when the listing does not show it"
+
+    - id: V5.4
+      scenario: One copy is in the trash, another in a folder that is
+      expect: Both gone, nothing but the listing asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is gone when it is in the trash, or in a folder that is"
+
+    - id: V5.5
+      scenario: The copy was moved to another folder
+      expect: The user's, and no getContent or getEntries -- the listing already said so
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when moved to another folder, and the tablet is not asked anything more"
+
+    - id: V5.6
+      scenario: The copy was moved to the top level
+      expect: The user's, and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when moved to the top level, and the tablet is not asked anything more"
+
+    - id: V5.7
+      scenario: The copy was renamed on the tablet
+      expect: The user's (P16), and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when renamed (P16), and the tablet is not asked anything more"
+
+    - id: V5.8
+      scenario: The copy was pinned
+      expect: The user's (P16), and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when pinned (P16), and the tablet is not asked anything more"
+
+    - id: V5.9
+      scenario: The document carries a tag, mapped to a folder or not
+      expect: The user's -- a tag is something the user did -- and nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when tagged, mapped or not, and the tablet is not asked anything more"
+
+    - id: V5.10
+      scenario: The document's tags come in the legacy shape, plain strings
+      expect: The user's all the same
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when tagged in the legacy shape, and the tablet is not asked anything more"
+
+    - id: V5.11
+      scenario: Only a page carries a tag
+      expect: The user's after one getContent; the file list is not asked for
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when a page carries a tag, which costs no file list"
+
+    - id: V5.28
+      scenario: The copy's .content has no page-tag list
+      expect: No page tag -- untouched, the other tests passing
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > reads no page-tag list as no page tag"
+
+    - id: V5.29
+      scenario: The copy's .content has a null page-tag list
+      expect: No page tag, the same
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > reads a null page-tag list as no page tag"
+
+    - id: V5.12
+      scenario: A page has an .rm file -- ink, a highlight, or ink erased again
+      expect: The user's. Erased ink cannot be told from ink, and the error falls on the side of asking
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when any page has an .rm file, erased ink included"
+
+    - id: V5.13
+      scenario: The record's entry has no folder id
+      expect: The user's, nothing more asked -- nothing can vouch for a copy whose place is unknown
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when the record lost its folder, and the tablet is not asked anything more"
+
+    - id: V5.14
+      scenario: The record's entry has no name
+      expect: The user's, nothing more asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is the user's when the record lost its name, and the tablet is not asked anything more"
+
+    - id: V5.15
+      scenario: Three earlier copies -- one gone, one untouched, one renamed
+      expect: One listing for all of them, answered in the order asked
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what an earlier copy of a vault send is now (send spec §3) > is looked at in one listing for several copies, answered in the order asked"
+
+    - id: V5.16
+      scenario: The send folder holds a document of the new one's name that the vault did not send from this origin
+      expect: Reported as a stranger, never classed, never looked into -- the new one lands beside it
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is reported and never classed or looked into"
+
+    - id: V5.17
+      scenario: The only same-named document in the folder is this origin's own copy, pinned
+      expect: No stranger -- an earlier copy is never one, whatever its state
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is never one of this origin's own copies, whatever state they are in"
+
+    - id: V5.32
+      scenario: The only same-named document in the folder is a copy the user chose to keep, handed to the look by id only (ticket 25)
+      expect: No stranger, and the kept copy is not classed or looked into (P15) -- one listing, nothing more
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is never a copy the user chose to keep, which is not looked into either"
+
+    - id: V5.18
+      scenario: Same-named documents sit in another folder, in a second folder of the send folder's name, in the trash, and in an account without the folder
+      expect: No stranger in any of them -- only the folder the new one goes into counts
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a document of the same name in the send folder that the vault did not send there (send spec §3) > is looked for only in the folder the new one goes into"
+
+    - id: V5.19
+      scenario: The listing throws
+      expect: The whole look rejects; the send (16) goes on and clears nothing (P17)
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a look that fails (send spec §3, P17) > rejects as a whole when listItems throws"
+
+    - id: V5.20
+      scenario: getContent throws
+      expect: The whole look rejects -- never one copy classed and another not
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a look that fails (send spec §3, P17) > rejects as a whole when getContent throws"
+
+    - id: V5.21
+      scenario: getEntries throws
+      expect: The whole look rejects
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "a look that fails (send spec §3, P17) > rejects as a whole when getEntries throws"
+
+    - id: V5.22
+      scenario: An untouched copy is cleared
+      expect: One delete with the look's id and hash, the copy's parent is the trash, nothing else called -- no move, no purge
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "moving an earlier copy to the tablet's trash (ADR 0001) > moves exactly the copy the look listed, by its id and hash, and calls nothing else"
+
+    - id: V5.23
+      scenario: The copy changed between the look and the clearing, so rmapi-js answers HashNotFoundError (F11, against the fake)
+      expect: Not cleared, and the copy is where it was with its new hash
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "moving an earlier copy to the tablet's trash (ADR 0001) > leaves a copy that changed since the look where it is, and says it was not cleared"
+
+    - id: V5.24
+      scenario: The move fails for another reason
+      expect: The error reaches the caller unchanged
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "moving an earlier copy to the tablet's trash (ADR 0001) > hands every other failure to the caller unchanged"
+
+    - id: V5.25
+      scenario: Somebody adds a member to the cloud send's API type -- a move, a purge, a rename
+      expect: The type check fails; the type is the upload's three calls, getContent, raw.getEntries and delete, and nothing more
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what a send may ask of the cloud > is the upload's three calls, the look's two reads and the trash, and nothing more"
+
+    - id: V5.26
+      scenario: A send over SSH goes into a folder that was there, and into one it made
+      expect: The answer names that folder's id, as over the cloud
+      tier: pro
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: "putting a PDF on the tablet > names the folder it put the document into, whether it was there or made"
+
+    - id: V5.27
+      scenario: The SSH transport is asked what it can do for a second send
+      expect: Neither a look nor a trash -- over SSH a vault send only adds (05 #12)
+      tier: pro
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "sending a PDF over SSH > has no look at earlier copies and no trash"
+
+- feature: V6
+  name: The tablet a note is printed for, and the guess at it
+  code: src/vault-send-settings.ts
+  tier: free
+  scenarios:
+    - id: V6.1
+      scenario: The user picked a tablet, and the synced pages declared the other one
+      expect: The pick
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the tablet a note is printed for > is the user's pick, whatever the synced pages said"
+
+    - id: V6.2
+      scenario: No pick, a Paper Pro's pages seen
+      expect: Paper Pro
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the tablet a note is printed for > is the screen last seen until the user picks"
+
+    - id: V6.3
+      scenario: No pick, nothing seen
+      expect: The reMarkable 1, 2 or Paper Pure page (06 #1)
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the tablet a note is printed for > is the reMarkable 1, 2 or Paper Pure page while nothing has been seen"
+
+    - id: V6.4
+      scenario: A document's pages carry scene_info, one of them a reMarkable 2's, one a Paper Pro's screen; its lastModified in milliseconds or ISO
+      expect: That tablet, at the document's time as ISO
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the screen a synced document declares > names the tablet its pages were written on, at the document's last change"
+
+    - id: V6.5
+      scenario: Pages without scene_info, a page with none at all, a Paper Pro Move's screen
+      expect: Nothing -- the Move stays at 1/2, the entry 06 #1 advises for it
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the screen a synced document declares > is nothing for pages that declare no screen, or one no known tablet has"
+
+    - id: V6.6
+      scenario: A declaring document whose lastModified is missing or unreadable
+      expect: Nothing -- a declaration that cannot be placed in time could not be told from an older one
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "the screen a synced document declares > is nothing when the document's time cannot be read"
+
+    - id: V6.7
+      scenario: The first declaration arrives
+      expect: Remembered as tabletSeen with its time
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > takes the first declaration"
+
+    - id: V6.8
+      scenario: A newer document declares the other tablet
+      expect: It replaces the one held -- the newest is the device in use (§11 P6)
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > replaces it with a newer document's"
+
+    - id: V6.9
+      scenario: An older document declares the other tablet, in either order
+      expect: The newer one stays -- two tablets on one account never flip the guess
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > never lets an older document's declaration replace a newer one's"
+
+    - id: V6.10
+      scenario: Two declarations at the same time, and a sync that declared nothing
+      expect: The one held stays; nothing declared changes nothing (the same object)
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "remembering the screen seen > keeps the one held on a tie, and changes nothing when nothing was declared"
+
+    - id: V6.11
+      scenario: No vaultSend block in data.json
+      expect: Folder Obsidian, tablet "auto", Normal, toolbar left, nothing seen
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > gives a data.json without the group the defaults: folder Obsidian, tablet not chosen, Normal, toolbar left"
+
+    - id: V6.12
+      scenario: A block holding every value the group can hold
+      expect: Kept exactly, and reading it again changes nothing
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > keeps every value the group can hold"
+
+    - id: V6.13
+      scenario: A hand-edited block -- a blank folder, a tablet "rm2", a text size "huge", a toggle "yes" -- or no object at all
+      expect: Each of those the default; a dropdown is never handed a value it does not offer
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > reads a value no control offers, or no folder name, as the default"
+
+    - id: V6.14
+      scenario: A screen seen without its time, with an unreadable one, or a time without a screen
+      expect: Neither is kept
+      layer: unit
+      file: src/vault-send-settings.test.ts
+      test: "reading the stored group > keeps the screen seen only together with its time"
+
+    - id: V6.15
+      scenario: A sync renders a reMarkable 2 notebook and a newer Paper Pro notebook, listed in either order
+      expect: The run reports the Paper Pro, at the newer document's time
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the screen the synced pages declared (send spec §7) > reports the newest rendered document's screen, whatever order the listing has"
+
+    - id: V6.16
+      scenario: A sync renders an annotated PDF whose annotation scene names a reMarkable 2
+      expect: The run reports the reMarkable 1/2
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the screen the synced pages declared (send spec §7) > reports the screen of a PDF's annotations too"
+
+    - id: V6.17
+      scenario: A sync renders only pages without scene_info, or renders nothing
+      expect: The run reports no screen
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the screen the synced pages declared (send spec §7) > reports nothing when no rendered page declares a screen, or nothing was rendered"
+
+    - id: V6.18
+      scenario: The plugin runs a sync that reports a screen
+      expect: tabletSeen and tabletSeenAt are set and saved with the run
+      layer: vault
+      file: src/vault-send-wiring.test.ts
+      test: "the screen a sync saw (send spec §7) > is remembered with its document's time, and saved with the run"
+
+    - id: V6.19
+      scenario: The plugin runs a sync whose screen comes from an older document than the one held
+      expect: The one held stays
+      layer: vault
+      file: src/vault-send-wiring.test.ts
+      test: "the screen a sync saw (send spec §7) > does not replace one seen on a newer document"
+
+    - id: V6.20
+      scenario: The user picked a tablet, and a sync reports the other one
+      expect: The pick stays
+      layer: vault
+      file: src/vault-send-wiring.test.ts
+      test: "the screen a sync saw (send spec §7) > leaves the user's pick as it is"
+
+
+- feature: V7
+  name: One vault send, end to end
+  code: src/vault-send.ts
+  tier: free
+  scenarios:
+    - id: V7.1
+      scenario: A note is sent over the cloud
+      expect: 'Printed, uploaded into the send folder under the file''s name, recorded with origin, kind, time, name and folder id; notice "Sent \"Login-Spec\" to your reMarkable, into \"Obsidian\". " + the tag hint'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > prints a note, puts it in the send folder under the file's name, records it, and says where it went"
+
+    - id: V7.2
+      scenario: A PDF is sent
+      expect: Its bytes go up as they are; nothing is printed; recorded as kind pdf
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > sends a PDF as it is, without printing it"
+
+    - id: V7.3
+      scenario: A file name with a colon, 200 characters long
+      expect: The Zotero send's own rule -- `:` becomes `-`, cut at 120 code points
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > names the document through the tablet's own name rule: no / or :, at most 120 characters"
+
+    - id: V7.32
+      scenario: A file called `.md`, with nothing before its extension
+      expect: The document is called Untitled
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > calls a file with no name before its extension Untitled"
+
+    - id: V7.33
+      scenario: The print surface answers that it is busy
+      expect: '"Another send is still running." -- not a print failure with that sentence as its reason'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > says another send is running where the print surface is still busy with one"
+
+    - id: V7.4
+      scenario: A note with properties and nothing after them
+      expect: '"\"Login-Spec\" is empty. There is nothing to send." -- nothing printed, nothing asked of the tablet, nothing saved'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > refuses an empty note before anything touches the tablet"
+
+    - id: V7.5
+      scenario: The print fails
+      expect: '"\"Login-Spec\" could not be printed, so nothing was sent: <reason>." -- the tablet is never asked'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > says why a note could not be printed, and sends nothing"
+
+    - id: V7.6
+      scenario: A print refused below Electron 40
+      expect: The reason, its period, then "Restart Obsidian before you try again." -- a trailing period of the reason is not doubled
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > asks for a restart after the reason where a refused print blocks every later one"
+
+    - id: V7.7
+      scenario: The printer throws something that is no print failure
+      expect: Its message is the reason, and nothing goes up
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > passes on the message of a printer that threw something else"
+
+    - id: V7.8
+      scenario: Neither the cloud nor an SSH route is there
+      expect: The existing SEND_NEEDS_TRANSPORT sentence; nothing printed, nothing saved
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > says there is no route, and touches nothing"
+
+    - id: V7.9
+      scenario: The upload fails after the look found an untouched copy
+      expect: '"Sending to your reMarkable failed: <reason>"; nothing recorded, the earlier copy neither inspected further nor cleared'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > records nothing and clears nothing when the upload fails, and says why in the existing sentence"
+
+    - id: V7.10
+      scenario: A second send is started while one runs
+      expect: '"Another send is still running.", the status line left to the first; the next send after it goes'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > refuses a second send while one runs, and leaves the status line to the first"
+
+    - id: V7.11
+      scenario: A sync adds a record entry while the upload runs
+      expect: The new send is written into the record as it is then, so the sync's entry stays (spec §5)
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a first send (send spec §2, §8) > writes into the record as it is after the upload, so an entry a sync added meanwhile stays"
+
+    - id: V7.12
+      scenario: One tag is mapped for sync
+      expect: 'Tag it, or any page of it, with "sync" on the tablet to bring your marks back as one note.'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > names the one mapped tag"
+
+    - id: V7.13
+      scenario: Two tags are mapped
+      expect: 'Tag it, or any page of it, with one of your sync tags ("sync", "work") on the tablet to bring your marks back as one note.'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > names several mapped tags"
+
+    - id: V7.14
+      scenario: Four tags are mapped
+      expect: The first three, then `…`
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > names at most three, then …"
+
+    - id: V7.15
+      scenario: No tag is mapped
+      expect: 'No tag is mapped for sync yet. Map one in the settings, then tag the document or any page of it to bring your marks back as one note.'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > says to map one where none is mapped"
+
+    - id: V7.16
+      scenario: A send with two tags mapped
+      expect: The hint ends the Sent sentence
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "the tag hint (send spec §8.1) > ends the Sent sentence of every send"
+
+    - id: V7.17
+      scenario: The origin has two earlier copies, one of them without a recorded name or folder, and another origin has one
+      expect: One look before the upload, handed this origin's two with what the record knows of each
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > looks at the earlier copies before the upload, with the name and folder they were sent as"
+
+    - id: V7.36
+      scenario: The look found the send folder, found none, or failed
+      expect: The upload is handed the found folder's id; without one it looks the folder up by name itself
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > uploads into the folder the look found, and leaves the lookup to the upload where the look found none or failed"
+
+    - id: V7.18
+      scenario: The earlier copy is untouched
+      expect: Moved to the trash after the upload, no question; " The earlier copy, which nobody had written on, is in the tablet's trash."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > swaps an untouched copy into the trash after the upload, without a question"
+
+    - id: V7.19
+      scenario: Two untouched copies
+      expect: '" The 2 earlier copies, which nobody had written on, are in the tablet''s trash."'
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > speaks of two untouched copies in the plural"
+
+    - id: V7.20
+      scenario: The earlier copy is gone
+      expect: Nothing cleared, nothing added to the notice
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > says nothing about a copy that is gone"
+
+    - id: V7.21
+      scenario: The earlier copy is the user's and the answer is Move it to the trash
+      expect: The dialog of §3 after the upload, word for word; the copy cleared; " The earlier copy is in the tablet's trash."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > asks about a copy of the user's after the upload, and clears it on Move it to the trash"
+
+    - id: V7.22
+      scenario: The earlier copy is the user's and the dialog is closed; then the note is sent again
+      expect: Kept and recorded as kept (P4); the next send does not show it to the look, never asks about it, and names it -- " The earlier copy with your marks is still there."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > keeps a copy of the user's when the dialog is closed, remembers it, and never asks about it again"
+
+    - id: V7.35
+      scenario: The user's copy is kept, but its entry left the record while the dialog was open (a sync dropped it)
+      expect: No entry is made for it -- the record is read live, and a mark describes a send, it does not make one
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > makes no entry for a kept copy whose entry left the record while the dialog was open"
+
+    - id: V7.23
+      scenario: Two copies of the user's
+      expect: One dialog, titled "has 2 earlier copies with your marks", buttons Keep them / Move them to the trash; the answer clears both
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > asks once about several copies of the user's, and the answer applies to all"
+
+    - id: V7.24
+      scenario: Clearing fails -- one copy changed since the look, one move throws
+      expect: The new document is recorded; " The 2 earlier copies could not be moved to the trash and are still there."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > records the new document and says the earlier copy is still there when clearing fails"
+
+    - id: V7.34
+      scenario: A transport that can look at earlier copies but has no trash
+      expect: The untouched copy stays, and the notice says it could not be moved to the trash
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > leaves the copy where it is, and says so, on a transport that can look but has no trash"
+
+    - id: V7.25
+      scenario: The look fails (P17)
+      expect: Uploaded and recorded, nothing cleared, no dialog; " The earlier copy could not be checked and is still there."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > still uploads and records when the look fails, clears nothing, asks nothing, and says so"
+
+    - id: V7.26
+      scenario: The look fails for an origin whose only copy the record knows to be gone
+      expect: No line about an earlier copy
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > says nothing of an earlier copy when a look fails for an origin with none"
+
+    - id: V7.27
+      scenario: The send folder holds a same-named document that is not this origin's
+      expect: Added beside it, never asked "send another copy?" (P12); " A document of that name was already there. This one was added beside it."
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > adds the new one beside a document of the same name that is not ours, and says so"
+
+    - id: V7.37
+      scenario: A second send while the send folder holds a kept copy and an untouched one of this origin (ticket 20, step 5)
+      expect: The untouched one swapped, the kept one named as still there -- and no " A document of that name was already there." (ticket 25)
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > does not take a kept copy in the send folder for a document of that name"
+
+    - id: V7.38
+      scenario: The send folder holds a kept copy of this origin and a same-named document that is not ours
+      expect: The kept one named as still there, and the stranger sentence after it
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > still says so for a document of that name that is not ours, beside a kept copy"
+
+    - id: V7.28
+      scenario: Several things happen to the earlier copies in one send
+      expect: The additions follow in the order of spec §8's table
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over the cloud (send spec §3) > puts the additions in the table's order"
+
+    - id: V7.29
+      scenario: A second send over SSH
+      expect: No look, no clearing; " Over SSH nothing is replaced. The earlier copy is still there."
+      tier: pro
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over SSH (send spec §3, 05 #12) > looks at nothing, clears nothing, and says the earlier copy is still there"
+
+    - id: V7.30
+      scenario: Over SSH, the record knows one copy, one kept copy and one gone copy
+      expect: '" Over SSH nothing is replaced. The 2 earlier copies are still there."'
+      tier: pro
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over SSH (send spec §3, 05 #12) > speaks of every copy the record does not know to be gone, kept ones included, in the plural"
+
+    - id: V7.31
+      scenario: Over SSH, every copy the record knows is gone
+      expect: The Sent sentence alone
+      tier: pro
+      layer: unit
+      file: src/vault-send.test.ts
+      test: "a second send over SSH (send spec §3, 05 #12) > says nothing more for an origin whose copies are all gone"
+
+
+- feature: V8
+  name: Where a vault send is offered, and what the plugin hands it
+  code: src/vault-send-plugin.ts
+  tier: free
+  scenarios:
+    - id: V8.1
+      scenario: The palette, with a note, a PDF, no file, a canvas, an image, an EPUB or a base active
+      expect: Send this file to reMarkable is offered for the note and the PDF only
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "where a vault send is offered (send spec §1) > offers the palette command only while a note or a PDF is the active file"
+
+    - id: V8.2
+      scenario: The file menu of a note, a PDF, a canvas and a folder
+      expect: Send to reMarkable on the note and the PDF, nothing on the others
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "where a vault send is offered (send spec §1) > puts Send to reMarkable in the file menu of a note or a PDF, and of nothing else"
+
+    - id: V8.3
+      scenario: The file menu of a note carrying zotero-key
+      expect: Both sends, the Zotero one first
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "where a vault send is offered (send spec §1) > shows both sends on a note that names a Zotero paper"
+
+    - id: V8.4
+      scenario: A PDF is sent from the file menu, the folder set to Inbox, two tags mapped
+      expect: The file's own bytes go into Inbox, the record lands in data.json and is saved, the notice names both tags
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > sends the file's bytes into the folder of the settings, records it in data.json and shows the notice"
+
+    - id: V8.7
+      scenario: The palette command runs with a PDF active
+      expect: That file is sent and one notice shown
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > sends the active file when the palette command runs"
+
+    - id: V8.8
+      scenario: A note is sent and Obsidian's renderer refuses
+      expect: The note went to printNote with Obsidian's render host; the renderer's message is the notice's reason and nothing is uploaded
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > hands a note to Obsidian's renderer, and sends nothing when it cannot print"
+
+    - id: V8.5
+      scenario: The dialog about the user's copy, as Obsidian draws it
+      expect: Keep it is the other button; Move it to the trash is drawn destructive and is not the call to action
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > asks about the user's copy with Keep it as the other button and the trash drawn as destructive, never as the call to action"
+
+    - id: V8.6
+      scenario: The dialog is closed with Escape
+      expect: The copy stays, is recorded as kept, and the notice says it is still there
+      layer: unit
+      file: src/vault-send-plugin.test.ts
+      test: "what the plugin hands a vault send > keeps the user's copy when the dialog is closed with Escape"
+
+- feature: V9
+  name: The sync brings a sent document back as one note per tag
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V9.1
+      scenario: A printed note of three pages comes back with a page tag on its middle page and ink on the other two
+      expect: One whole-document note, `Login-Spec — marked up`, all three pages in the render and the digest, no page note; the run hands back promotedTags [sync]
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > brings a page tag back as one note for the whole document, the marks on its untagged pages included"
+
+    - id: V9.2
+      scenario: The same PDF, but the vault did not send it
+      expect: A page note `Login-Spec — Page 2`, as today; no marks
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > keeps the page-note rule for the same PDF when the vault did not send it"
+
+    - id: V9.3
+      scenario: The progress bar over a sent document with one page tag (§12 F1)
+      expect: The pre-scan's total is the whole document's three pages, and the run's last message is done 3 of 3
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > counts the whole document in the pre-scan, the steps the run then reports"
+
+    - id: V9.4
+      scenario: A document tag and a page tag, mapped to two folders
+      expect: Two notes, one in each tag's folder, both named marked up
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > writes one note per mapped tag, each in its tag's folder"
+
+    - id: V9.5
+      scenario: Two tags routed to one folder
+      expect: '`… — marked up` and `… — marked up (sync)`, no date'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > tells two tags routed to one folder apart by the tag, not by the date"
+
+    - id: V9.6
+      scenario: Another document's note already holds the name
+      expect: The note takes the send date; the other note is untouched
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > names a name an earlier copy's note holds with the send date"
+
+    - id: V9.7
+      scenario: The origin is in the vault
+      expect: '`Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13` right below the callout''s own two lines'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > names its origin in the callout, with a link that opens it"
+
+    - id: V9.8
+      scenario: The origin is called `C# notes`
+      expect: '`Sent from [C# notes](<Specs/C# notes.md>) on …` -- a wikilink would point at a heading'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > links an origin whose path holds # with a Markdown link"
+
+    - id: V9.9
+      scenario: A reviewed sent document, then a sync after a change elsewhere on the account (the gate of §6.1)
+      expect: The document is not opened -- no getContent -- because the record's promotedTags stand in for the page tag the listing does not show
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the document gate (§6.1) > does not open a reviewed document again when only something else on the account changed"
+
+    - id: V9.10
+      scenario: The same two syncs, with the first run's marks never applied
+      expect: The document is opened again -- what the review found, and what promotedTags exists for
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the document gate (§6.1) > would open it on every sync without the page tags the last opening promoted"
+
+    - id: V9.11
+      scenario: A folder tag is taken off the folder a reviewed sent document sits in
+      expect: The document is opened, the folder tag's note orphaned, the page tag's note stays active
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the document gate (§6.1) > opens it when a folder tag is taken off, and orphans that tag's note"
+
+    - id: V9.12
+      scenario: The origin is gone from its path; a sync with nothing changed on the document, then one with a change
+      expect: The first writes nothing; the second writes the text form `Sent from "Login-Spec" on … — no longer in the vault`
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the origin line (§6.3) > turns into the file's name once the origin is gone, at the next write and not before"
+
+    - id: V9.13
+      scenario: A printed note comes back with Zotero connected
+      expect: The Zotero pass is never asked; the document is rendered as any other
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > Zotero (§6.4) > never matches a note the vault printed"
+
+    - id: V9.14
+      scenario: A PDF the vault sent comes back with Zotero connected
+      expect: The pass is asked about it like any PDF; the origin line keeps the .pdf in its link
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > Zotero (§6.4) > passes a PDF the vault sent through it like any PDF"
+
+    - id: V9.15
+      scenario: A sent copy nobody wrote on, tagged as a whole (§12 F12)
+      expect: A note with the callout, the origin line and the render, and no digest; "written with neither a digest nor a transcript" in diagnostics only, as for any tagged PDF nobody wrote on
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > brings a tagged copy nobody wrote on back as the callout and the render, with no digest"
+
+    - id: V9.16
+      scenario: The plugin runs a sync with a send recorded, and the run hands back a mark
+      expect: The run read the plugin's record; the mark is in the saved data.json
+      layer: unit
+      file: src/vault-send-wiring.test.ts
+      test: "what a sync found about the vault's sends (send spec §5, §6.1) > reads the record the plugin holds, and saves the run's marks into it"
+
+    - id: V9.17
+      scenario: The origin is renamed while the run goes on
+      expect: The mark lands on the live map, beside the new origin
+      layer: unit
+      file: src/vault-send-wiring.test.ts
+      test: "what a sync found about the vault's sends (send spec §5, §6.1) > puts the marks on the live map, so a rename made while the run went on stays"
+
+- feature: V10
+  name: A sent document's note -- its name, its origin line, what is hashed
+  code: src/note-builder.ts
+  tier: free
+  scenarios:
+    - id: V10.1
+      scenario: The base name of a sent document's note
+      expect: '`<name> — marked up`, through the same sanitising as every name'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > is named marked up, for the whole document"
+
+    - id: V10.2
+      scenario: A note as origin
+      expect: '`Sent from [[Specs/Login-Spec|Login-Spec]] on 2026-11-13`'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > links a note by its path without .md, with the file's name to read"
+
+    - id: V10.3
+      scenario: A PDF as origin
+      expect: The link keeps `.pdf`; the name to read does not
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > links a PDF with its extension"
+
+    - id: V10.4
+      scenario: The origin is gone
+      expect: '`Sent from "Login-Spec" on 2026-11-13 — no longer in the vault`'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > names an origin that is gone as text"
+
+    - id: V10.5
+      scenario: A path holding `#`, `^`, `[`, `]` or `|`
+      expect: A Markdown link with the path in angle brackets; brackets in the shown name escaped
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > originLine > links a path a wikilink would break on with a Markdown link, escaping the brackets it shows"
+
+    - id: V10.6
+      scenario: A sent PDF that is also linked to Zotero
+      expect: The origin line first, the Zotero line below it, both inside the callout
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > puts the origin line first in the callout, above a Zotero line"
+
+    - id: V10.7
+      scenario: The block read back with the link rewritten, and a block built with the text form
+      expect: Both hash like the block as written (§11 P1)
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > what the hand-edit check hashes (§11 P1) > leaves the origin line out, so Obsidian's rewrite of its link is no edit"
+
+    - id: V10.8
+      scenario: A sent document's block edited anywhere but the origin line
+      expect: The hash differs -- an edit
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > what the hand-edit check hashes (§11 P1) > still sees an edit anywhere else in the block"
+
+    - id: V10.9
+      scenario: A block without the origin line, whose transcript quotes "> Sent from my phone"
+      expect: Hashed whole, exactly as before 1.12.0; a change to that quoted line is an edit
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > what the hand-edit check hashes (§11 P1) > hashes a block without the line as before, a quoted Sent from in its text included"
+
+    - id: V10.10
+      scenario: The bare name is free
+      expect: '`Reviews/Login-Spec — marked up.md`'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > takes the bare name while it is free"
+
+    - id: V10.11
+      scenario: Another document's note holds the bare name
+      expect: The send date is added
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > takes the send date when another document's note has the name"
+
+    - id: V10.12
+      scenario: The dated name is taken as well
+      expect: The existing ladder goes on from the dated name -- ` (sync)`
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > goes on with the existing ladder when the dated name is taken too"
+
+    - id: V10.13
+      scenario: This document's own note under its other tag holds the bare name
+      expect: No date; ` (sync)` at once
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > skips the date when this document's own note under its other tag has the name"
+
+    - id: V10.14
+      scenario: A mapped tag is renamed to one in another folder
+      expect: The moved note keeps the marked-up name there
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "the note of a document the vault sent (send spec §6.2, §6.3) > its name in the folder > is the name a tag moved to another folder carries there"
+
+- feature: V11
+  name: What the sync says once about a sent copy -- marks but no tag, handwriting not read
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V11.1
+      scenario: A sent copy with ink and no mapped tag on it or a page, synced; then synced again after it changed, with the marks applied
+      expect: '"Login-Spec" has marks on it but no sync tag, so nothing came back. Tag it, or any page of it, with "sync" on the tablet. -- once; the run hands back inkCheckedHash and saidNoTag, and the second sync neither says it nor looks at the document''s files'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says once that a sent copy has marks but no tag, and not again at the next sync"
+
+    - id: V11.2
+      scenario: A sent, untagged copy without ink, synced; again with its hash unchanged; again after ink came
+      expect: Nothing said and one look at its files; no look while the hash is the one looked at; the sentence once the hash moved and ink is there
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > looks at a copy without marks once per change of its hash, and says nothing"
+
+    - id: V11.3
+      scenario: The same untagged PDF with ink, not sent by the vault
+      expect: Nothing said, no look at its files
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says nothing of a document the vault did not send"
+
+    - id: V11.4
+      scenario: Two tags mapped
+      expect: The sentence names them as the send's hint does -- one of your sync tags ("sync", "work")
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > names every mapped tag when there are several"
+
+    - id: V11.5
+      scenario: A tagged sent copy with handwriting, Your notes on PDFs off, synced; written again after a change, with the marks applied
+      expect: '"Login-Spec" has handwriting on it that was not read. Switch on "Your notes on PDFs" in the settings to get it as text. -- once; saidUnread handed back; the second write says nothing'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > says once that a sent copy's handwriting was not read, and not again at the next write"
+
+    - id: V11.6
+      scenario: The copy comes back under two mapped tags, two notes
+      expect: The sentence once
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > says it once for a copy that comes back under two tags"
+
+    - id: V11.7
+      scenario: The same copy with Your notes on PDFs on
+      expect: Never said
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > never says it with Your notes on PDFs on"
+
+    - id: V11.8
+      scenario: A tagged PDF with handwriting the vault did not send, switch off
+      expect: Never said
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > never says it of a document the vault did not send"
+
+    - id: V11.9
+      scenario: Switch off, ink only on a page added on the tablet
+      expect: The sentence -- a blank page added for a longer remark is where a reviewer writes one
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > counts ink on a page added on the tablet"
+
+    - id: V11.10
+      scenario: A short word and a stroke shaped like an underline that points at no text, switch off; then the same with the switch on
+      expect: unreadHandwriting 1 -- the word, not the mark-shaped stroke, which has its own warning; 0 with the switch on
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > counts the handwriting it left unread with margin notes off, and not a stray mark"
+
+    - id: V11.11
+      scenario: The look at an untagged sent copy's files fails (HTTP 503); the next sync finds the account changed
+      expect: Nothing said and nothing marked, a line in diagnostics; the next sync looks again and says it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says nothing when the look fails, and looks again at the next sync"
+
+    - id: V11.12
+      scenario: The sentence with no tag mapped
+      expect: How to map one, as the send's hint says it
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "the \"marks but no tag\" sentence (spec §6.5, §8.1) > says how to map one when no tag is mapped"
+
+    - id: V11.13
+      scenario: The sentence with four tags mapped
+      expect: Three names, then `…`, as the send's hint names them
+      layer: unit
+      file: src/vault-sends.test.ts
+      test: "the \"marks but no tag\" sentence (spec §6.5, §8.1) > names three tags at most, as the send's hint does"
+
+    - id: V11.14
+      scenario: A sent copy came back as a note, then its tag was taken off and it changed twice
+      expect: Nothing said either time -- "nothing came back" would be false; its row is orphaned, and any row keeps the look away
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > marks but no tag (§6.5) > says nothing of a copy whose tag was taken off after its note came back"
+
+    - id: V11.15
+      scenario: A tagged sent copy whose record entry this build cannot read, switch off, handwriting on it
+      expect: The note is written and nothing is said -- the flag would go into the entry and never be read back, so the sentence would come at every write
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > handwriting not read (§6.5) > never says it of a copy whose record this build cannot read"
+
+    - id: V11.16
+      scenario: Two words of ink on a page added on the tablet, switch off; then on
+      expect: unreadHandwriting 2, then 0
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > counts its ink as handwriting left unread with handwritten notes off"

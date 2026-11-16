@@ -48,16 +48,20 @@ function deviceCanvas(widthPx: number, heightPx: number, dpi: number): DeviceCan
 
 // Both public device specs, identical 0.75 aspect. reMarkable 1/2/Paper Pure: 1404x1872 @ 226 DPI.
 // reMarkable Paper Pro: the larger 1620x2160 @ 229 DPI canvas (which `detectCanvas` picks out).
-const RM_1_2 = deviceCanvas(1404, 1872, 226);
-const PAPER_PRO = deviceCanvas(1620, 2160, 229);
+// Exported for the vault send, which prints a note on a page the size of the same screens.
+export const RM_1_2 = deviceCanvas(1404, 1872, 226);
+export const PAPER_PRO = deviceCanvas(1620, 2160, 229);
 
 /**
  * The device a scene names in its own `scene_info` block (`RmPage.paperSize`) -- authoritative
  * when present, and the only way to know the DPI of a PDF-backed document's annotations, whose
  * coordinates say nothing about the screen they were drawn on. Null for pre-`scene_info`
  * firmware, and for a screen size no released device has.
+ *
+ * Exported for the vault send's guess at the user's tablet (send spec §7): a declared screen is the
+ * one fact about the device a synced page states outright.
  */
-function declaredCanvas(pages: RmPage[]): DeviceCanvas | null {
+export function declaredCanvas(pages: RmPage[]): DeviceCanvas | null {
 	for (const { paperSize } of pages) {
 		if (!paperSize) continue;
 		for (const canvas of [RM_1_2, PAPER_PRO]) {

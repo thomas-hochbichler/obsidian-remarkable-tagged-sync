@@ -49,6 +49,8 @@ import {
 import { pendingOcrRetries } from "./sync-engine";
 import { folderLabel, type MappedTag, planTagRouting, REMOVAL_MESSAGE, type UnmappedTag } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
+import type { SendTablet, SendTextSize } from "./note-print";
+import { DEFAULT_VAULT_SEND_FOLDER, tabletFor } from "./vault-send-settings";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
 import { linkedDocumentIds } from "./zotero-links";
@@ -99,7 +101,7 @@ const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
 const ROW_FAILED = "This row could not be drawn. Copy diagnostics under Help and report it.";
 
 /** The text keys: saved through one debounce, as their fields always were (spec §2.3). */
-const TYPED_KEYS = new Set(["attachmentsFolder", "zotero.apiKey", "zotero.folder", "zotero.sendTag"]);
+const TYPED_KEYS = new Set(["attachmentsFolder", "zotero.apiKey", "zotero.folder", "zotero.sendTag", "vaultSend.folder"]);
 
 /** What a typed or picked key stores (spec §6.1, §6.4, §7). */
 const SET_RULES: Record<string, (typed: string) => unknown> = {
@@ -111,7 +113,16 @@ const SET_RULES: Record<string, (typed: string) => unknown> = {
 	// is one the user has to go looking for.
 	"zotero.folder": (typed) => typed.trim() || DEFAULT_SEND_FOLDER,
 	"zotero.sendTag": (typed) => typed.trim(),
+	"vaultSend.folder": (typed) => typed.trim() || DEFAULT_VAULT_SEND_FOLDER,
 };
+
+/**
+ * *Tablet*'s key, read and written apart from the rest: it shows the guess until a pick and stores
+ * only the pick (send spec §7). `"auto"` is never offered.
+ */
+const TABLET_KEY = "vaultSend.tablet";
+const TABLETS: Record<SendTablet, string> = { rm12: "reMarkable 1, 2 or Paper Pure", paperPro: "Paper Pro" };
+const TEXT_SIZES: Record<SendTextSize, string> = { normal: "Normal", large: "Large" };
 
 /** A group library's switch, `zotero.group:<id>` (spec §6.2). */
 const GROUP_KEY = "zotero.group:";
@@ -184,6 +195,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				this.vaultGroup(),
 				this.transcriptionGroup(),
 				this.autoSyncGroup(),
+				this.vaultSendGroup(),
 				{
 					type: "group",
 					heading: "Integrations",
@@ -245,6 +257,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 */
 	getControlValue(key: string): unknown {
 		if (key.startsWith(GROUP_KEY)) return this.plugin.data.zotero.groups.some((group) => groupKey(group) === key);
+		if (key === TABLET_KEY) return tabletFor(this.plugin.data.vaultSend);
 		if (key === "autoSync.interval") {
 			const hours = this.plugin.data.autoSync.intervalHours;
 			return hours === null ? "launch" : `h${hours}`;
@@ -273,7 +286,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const data = this.plugin.data as unknown as Record<string, unknown>;
 		if (!(head in data) || (sub !== undefined && !(sub in (data[head] as object)))) throw new Error(`Tagged Sync: no setting "${key}"`);
 		const stored = key in SET_RULES ? SET_RULES[key](String(value ?? "")) : value;
-		if (this.getControlValue(key) === stored) return;
+		// *Tablet* shows the guess, so the guess is no reason to skip: picking the tablet it shows is a pick.
+		if ((key === TABLET_KEY ? this.plugin.data.vaultSend.tablet : this.getControlValue(key)) === stored) return;
 		// The next sync makes notes due if a switch still differs then (`settleMarginNotesChoice`,
 		// `settleZoteroSwitches`), so a switch knocked off and back on reads nothing again. A vault that
 		// has not recorded a value yet has the old one until then.
@@ -1389,6 +1403,56 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			heading: "Automatic sync",
 			cls: "tagged-sync-group-autosync",
 			items,
+		};
+	}
+
+	/**
+	 * *Send from the vault* (send spec §7): where a sent file lands and how a note is printed. On the root
+	 * rather than under Zotero, because a note is no paper; free, apart from the SSH route. That switch is
+	 * the Zotero page's own value, shown here too: one switch for both kinds of send, gated where it always
+	 * was ({@link allowedTransports}), not by a gate of its own.
+	 */
+	private vaultSendGroup(): SettingDefinitionGroup {
+		const ssh = allowedTransports(this.plugin.entitlement()).includes("ssh");
+		const sshName = ssh ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)";
+		return {
+			type: "group",
+			heading: "Send from the vault",
+			cls: "tagged-sync-group-vault-send",
+			items: [
+				{
+					// A group takes no description (`SettingDefinitionGroup`), so its first row says it (§12 F9).
+					name: "What a send does",
+					desc:
+						"Send this file to reMarkable puts the open note or PDF on your tablet. It uploads one PDF to your reMarkable account: " +
+						"the file itself, or the printed note with the notes and images it embeds. Nothing is sent until you run the command.",
+				},
+				{
+					name: "Tablet folder for sent files",
+					desc: "Looked up by name and created if it is not there; this plugin never renames a folder. It may be the same folder as the one for Zotero papers.",
+					control: { type: "text", key: "vaultSend.folder", placeholder: DEFAULT_VAULT_SEND_FOLDER },
+				},
+				{
+					name: "Tablet",
+					desc: "A note is printed on a page the size of this tablet's screen, so the text is the same size on either. Taken from your synced pages until you choose. A PDF is sent as it is.",
+					control: { type: "dropdown", key: TABLET_KEY, options: TABLETS },
+				},
+				{
+					name: "Text size",
+					desc: "Normal is 10 pt, Large is 12 pt. Code, tables and diagrams follow.",
+					control: { type: "dropdown", key: "vaultSend.textSize", options: TEXT_SIZES },
+				},
+				{
+					name: "Toolbar on the right",
+					desc: "Turn this on if your tablet is in left-handed mode. A sent note keeps its wide margin on the toolbar's side, so the toolbar never covers text.",
+					control: { type: "toggle", key: "vaultSend.toolbarRight" },
+				},
+				{
+					name: sshName,
+					desc: `Covers both kinds of send. Over SSH a vault send only adds: an earlier copy is never replaced there. ${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`,
+					control: { type: "toggle", key: "zotero.sendOverSsh", disabled: !ssh },
+				},
+			],
 		};
 	}
 

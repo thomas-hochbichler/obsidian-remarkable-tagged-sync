@@ -339,6 +339,8 @@ describe("the shape of the settings screen", () => {
 			"Vault output",
 			"Transcription",
 			"Automatic sync",
+			// On the root, not under Zotero: a note is no paper (send spec §7).
+			"Send from the vault",
 			// Between automatic sync and the Pro section: set up once, each on its own page.
 			"Integrations",
 			// The page's title; its first group, the connection, has no heading (settings-redesign 05 #5).
@@ -475,7 +477,7 @@ describe("the declarative tab (settings-redesign spec §2, §3)", () => {
 	const groupsOf = (tab: Tab): [string | undefined, string | undefined][] =>
 		(tab.getSettingDefinitions() as unknown as Definition[]).map((group) => [group.heading, group.cls]);
 
-	it("answers with the root page's eight groups in order, Zotero and Readwise as pages", async () => {
+	it("answers with the root page's nine groups in order, Zotero and Readwise as pages", async () => {
 		const { tab } = await tabWith({ deviceToken: "d" });
 
 		expect(groupsOf(tab)).toEqual([
@@ -484,11 +486,12 @@ describe("the declarative tab (settings-redesign spec §2, §3)", () => {
 			["Vault output", "tagged-sync-group-vault"],
 			["Transcription", "tagged-sync-group-transcription"],
 			["Automatic sync", "tagged-sync-group-autosync"],
+			["Send from the vault", "tagged-sync-group-vault-send"],
 			["Integrations", "tagged-sync-group-integrations"],
 			["Tagged Sync Pro", "tagged-sync-group-pro"],
 			["Help", "tagged-sync-group-help"],
 		]);
-		const integrations = (tab.getSettingDefinitions() as unknown as Definition[])[5];
+		const integrations = (tab.getSettingDefinitions() as unknown as Definition[])[6];
 		expect(integrations.items?.map((item) => [item.type, item.name])).toEqual([
 			["page", "Zotero"],
 			["page", "Readwise"],
@@ -1263,6 +1266,144 @@ describe("automatic sync", () => {
 	});
 });
 
+describe("the Send from the vault group (send spec §7)", () => {
+	const PRO = {
+		licence: {
+			...NO_LICENCE,
+			key: "TS-XXXX-1234",
+			activationId: "act-1",
+			validatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+		},
+	};
+	const SSH_ROW = "Send over SSH when the cloud is not connected";
+	const group = (tab: Tab): Drawn[] => section(draw(tab), "Send from the vault");
+	const vaultSend = (plugin: Plugin) => plugin.data.vaultSend as { folder: string; tablet: string; textSize: string; toolbarRight: boolean };
+
+	it("answers its rows in order, each control bound to its key", async () => {
+		const { tab } = await tabWith(PRO);
+
+		expect(rowsOf(tab, "Send from the vault")).toEqual([
+			// A group has no description of its own (§12 F9): the first row without a control carries it.
+			{ name: "What a send does", kind: "text", shown: true },
+			{ name: "Tablet folder for sent files", kind: "text", key: "vaultSend.folder", shown: true },
+			{ name: "Tablet", kind: "dropdown", key: "vaultSend.tablet", shown: true },
+			{ name: "Text size", kind: "dropdown", key: "vaultSend.textSize", shown: true },
+			{ name: "Toolbar on the right", kind: "toggle", key: "vaultSend.toolbarRight", shown: true },
+			// The Zotero page's own value, shown in both places: one switch, both kinds of send.
+			{ name: SSH_ROW, kind: "toggle", key: "zotero.sendOverSsh", shown: true },
+		]);
+	});
+
+	it("says every row in the spec's words", async () => {
+		const drawn = group((await tabWith(PRO)).tab);
+
+		expect(drawn.filter((item) => item.kind === "row").map((item) => [item.name, item.desc])).toEqual([
+			[
+				"What a send does",
+				"Send this file to reMarkable puts the open note or PDF on your tablet. It uploads one PDF to your reMarkable account: the file itself, or the printed note with the notes and images it embeds. Nothing is sent until you run the command.",
+			],
+			["Tablet folder for sent files", "Looked up by name and created if it is not there; this plugin never renames a folder. It may be the same folder as the one for Zotero papers."],
+			["Tablet", "A note is printed on a page the size of this tablet's screen, so the text is the same size on either. Taken from your synced pages until you choose. A PDF is sent as it is."],
+			["Text size", "Normal is 10 pt, Large is 12 pt. Code, tables and diagrams follow."],
+			["Toolbar on the right", "Turn this on if your tablet is in left-handed mode. A sent note keeps its wide margin on the toolbar's side, so the toolbar never covers text."],
+			[
+				SSH_ROW,
+				"Covers both kinds of send. Over SSH a vault send only adds: an earlier copy is never replaced there. Sending over SSH restarts the tablet's reading app; the document you have open is closed first. The reading app is back in about six seconds.",
+			],
+		]);
+	});
+
+	it("offers the two tablets and the two text sizes, and nothing else", async () => {
+		const drawn = group((await tabWith()).tab);
+
+		expect(dropdown(drawn, "Tablet").options).toEqual({ rm12: "reMarkable 1, 2 or Paper Pure", paperPro: "Paper Pro" });
+		expect(dropdown(drawn, "Text size").options).toEqual({ normal: "Normal", large: "Large" });
+		expect(dropdown(drawn, "Text size").value).toBe("normal");
+		expect(field(drawn, "Tablet folder for sent files").placeholder).toBe("Obsidian");
+	});
+
+	describe("Tablet, until the user chooses", () => {
+		it("shows the reMarkable 1, 2 or Paper Pure while no synced page has declared a screen", async () => {
+			expect(dropdown(group((await tabWith()).tab), "Tablet").value).toBe("rm12");
+		});
+
+		it("shows the screen the synced pages declared", async () => {
+			const { tab } = await tabWith({ vaultSend: { tabletSeen: "paperPro", tabletSeenAt: "2026-11-12T09:00:00.000Z" } });
+
+			expect(dropdown(group(tab), "Tablet").value).toBe("paperPro");
+		});
+
+		it("stores the pick, which counts from then on whatever the pages say", async () => {
+			const { plugin, tab } = await tabWith({ vaultSend: { tabletSeen: "paperPro", tabletSeenAt: "2026-11-12T09:00:00.000Z" } });
+			dropdown(group(tab), "Tablet").pick("rm12");
+			await settle();
+
+			expect(vaultSend(plugin).tablet).toBe("rm12");
+			expect((plugin.saves.at(-1) as { vaultSend: { tablet: string } }).vaultSend.tablet).toBe("rm12");
+			expect(dropdown(group(tab), "Tablet").value).toBe("rm12");
+		});
+
+		// The guess and the pick can be the same tablet; picking it is still a pick.
+		it("stores a pick of the tablet it was already showing", async () => {
+			const { plugin, tab } = await tabWith();
+
+			await tab.setControlValue("vaultSend.tablet", "rm12");
+
+			expect(vaultSend(plugin).tablet).toBe("rm12");
+			expect(plugin.saves).toHaveLength(1);
+		});
+	});
+
+	it("saves the text size and the toolbar switch", async () => {
+		const { plugin, tab } = await tabWith();
+		dropdown(group(tab), "Text size").pick("large");
+		toggle(group(tab), "Toolbar on the right").toggle(true);
+		await settle();
+
+		expect([vaultSend(plugin).textSize, vaultSend(plugin).toolbarRight]).toEqual(["large", true]);
+	});
+
+	// A folder with no name would put every sent note at the root of the tablet.
+	it("trims a typed folder name, and takes an emptied one as Obsidian", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith();
+		field(group(tab), "Tablet folder for sent files").type(" Inbox ");
+		expect(vaultSend(plugin).folder).toBe("Inbox");
+		await vi.advanceTimersByTimeAsync(600);
+		expect(plugin.saves.length).toBeGreaterThan(0);
+
+		field(group(tab), "Tablet folder for sent files").type("  ");
+		expect(vaultSend(plugin).folder).toBe("Obsidian");
+		vi.useRealTimers();
+	});
+
+	// The user's own requirement in 05: one common folder, e.g. Inbox, for papers and notes.
+	it("may name the Zotero folder, and leaves the Zotero folder as it was", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith({ zotero: { folder: "Inbox" } });
+		field(group(tab), "Tablet folder for sent files").type("Inbox");
+
+		expect(vaultSend(plugin).folder).toBe("Inbox");
+		expect((plugin.data.zotero as { folder: string }).folder).toBe("Inbox");
+		vi.useRealTimers();
+	});
+
+	it("keeps the SSH switch shut for a free vault, and says it is Pro", async () => {
+		const drawn = group((await tabWith()).tab);
+
+		expect(toggle(drawn, `${SSH_ROW} (Pro)`).disabled).toBe(true);
+	});
+
+	it("writes the one SSH switch the Zotero page shows", async () => {
+		const { plugin, tab } = await tabWith(PRO);
+		toggle(group(tab), SSH_ROW).toggle(true);
+		await settle();
+
+		expect((plugin.data.zotero as { sendOverSsh: boolean }).sendOverSsh).toBe(true);
+		expect(toggle(section(draw(tab), "Send to your tablet"), SSH_ROW).value).toBe(true);
+	});
+});
+
 describe("the Zotero section", () => {
 	// Zotero is split (spec §5): zotero.org, Send and the note's Zotero line are free; the desktop
 	// app and Send over SSH are Pro, and those two rows are *shown* disabled with "(Pro)" rather than
@@ -1651,7 +1792,7 @@ describe("the Zotero section", () => {
 	// §2.4's own sentence, in advance rather than in a notice afterwards: this is the one thing the
 	// plugin does that interrupts the person holding the tablet.
 	it("names the restart before the SSH send switch is touched", async () => {
-		const drawn = draw((await tabWith(PRO)).tab);
+		const drawn = section(draw((await tabWith(PRO)).tab), "Send to your tablet");
 		const restart = row(drawn, "Send over SSH when the cloud is not connected");
 
 		expect(restart.desc).toContain("restarts the tablet's reading app");
@@ -1660,7 +1801,7 @@ describe("the Zotero section", () => {
 
 	it("saves the SSH send switch", async () => {
 		const { plugin, tab } = await tabWith(PRO);
-		toggle(draw(tab), "Send over SSH when the cloud is not connected").toggle(true);
+		toggle(section(draw(tab), "Send to your tablet"), "Send over SSH when the cloud is not connected").toggle(true);
 		await settle();
 
 		expect((plugin.data.zotero as { sendOverSsh: boolean }).sendOverSsh).toBe(true);
@@ -1668,7 +1809,7 @@ describe("the Zotero section", () => {
 
 	// Send over the cloud is free (§5); the SSH route is the Pro transport, and its row says so.
 	it("opens the folder row to a free vault and keeps SSH send shut", async () => {
-		const drawn = draw((await tabWith()).tab);
+		const drawn = section(draw((await tabWith()).tab), "Send to your tablet");
 
 		expect(field(drawn, "Tablet folder for sent PDFs").disabled).toBe(false);
 		expect(toggle(drawn, "Send over SSH when the cloud is not connected (Pro)").disabled).toBe(true);

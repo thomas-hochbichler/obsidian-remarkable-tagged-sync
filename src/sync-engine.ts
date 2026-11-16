@@ -16,7 +16,9 @@ import {
 	managedBlockHash,
 	moveNote,
 	type NoteFields,
+	originLine,
 	parentFolder,
+	type SentNote,
 	type NoteStore,
 	type OcrStatus,
 	readDigestPages,
@@ -42,6 +44,9 @@ import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, tr
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 import { readsNothing } from "./vision-ocr-backend";
+import { newerScreen, type ScreenSeen, screenDeclaredBy } from "./vault-send-settings";
+import { isCovered, noTagNotice, sendFor, type StoredVaultSends, type SyncMarks, unreadNotice } from "./vault-sends";
+import { formatLocalDate } from "./zotero-note";
 
 export type SyncRowStatus = "active" | "orphaned";
 
@@ -367,6 +372,13 @@ export interface SyncDeps {
 	 */
 	readwise?: ReadwiseRecorder;
 	/**
+	 * The vault's record of what it sent (send spec §5), read as it is now -- absent, or `{}`, for a
+	 * vault that never sent anything, and then every document keeps the page-note rule. Read, never
+	 * written: what the run finds about a sent document goes back as `SyncResult.sendMarks`, because a
+	 * rename or a send made while the run goes on lands in the live map.
+	 */
+	vaultSends?: () => StoredVaultSends;
+	/**
 	 * Polled at unit boundaries: `true` ends the run early, in a state the next sync resumes from.
 	 * Only ever read, never awaited -- nothing in this path can actually be aborted (the cloud API
 	 * goes through Obsidian's `requestUrl`, which takes no AbortSignal, and OCR runs in subprocesses
@@ -466,6 +478,23 @@ export interface SyncResult {
 	 * and diagnostics nobody opens is not where that gets noticed.
 	 */
 	zoteroNotices: string[];
+	/**
+	 * The two sentences the sync says about a document the vault sent (send spec §6.5): marks on it but
+	 * no sync tag, and handwriting left unread. Each once per sent copy -- `sendMarks` carries the flag
+	 * that keeps it from coming back -- and shown with the end-of-sync notices, like `zoteroNotices`.
+	 */
+	vaultSendNotices: string[];
+	/**
+	 * The screen the newest document this run rendered declared, or `null` when none did (send spec §7).
+	 * Newest by the document's `lastModified`, never the last rendered: the run walks the listing's order,
+	 * and two tablets on one account would flip the guess for *Tablet* by order alone.
+	 */
+	screenSeen: ScreenSeen | null;
+	/**
+	 * What the run found about the documents the vault sent, by document id, for the caller to apply to
+	 * the live record (`applySyncMarks`, send spec §5). Only a value that differs from the record's.
+	 */
+	sendMarks: Record<string, SyncMarks>;
 }
 
 /**
@@ -988,6 +1017,8 @@ function splitForTranscript(
 interface UnitParams {
 	/** Finished attachment bytes: a `.rm` render for handwritten docs, the embedded source for PDF-backed ones. */
 	pdfBytes: Uint8Array;
+	/** Set for a document the vault sent: its note's name and origin line (send spec §6.2, §6.3). */
+	sent?: SentNote;
 	/**
 	 * The scenes `renderPagesToPdf` drew `pdfBytes` from, in page order: set for a notebook render, the
 	 * one kind of attachment that takes a text layer. Absent for a PDF-backed unit, whose margin notes
@@ -1381,6 +1412,7 @@ async function writeUnit(
 		// The Obsidian half completes first, always (spec §3.4): write-back runs after this note is
 		// written, so its line and its per-quote links can only be in the note the second write makes.
 		zoteroLine: null,
+		...(params.sent === undefined ? {} : { sent: params.sent }),
 	};
 
 	// Between building the block and writing it, the only moment both the finished note and the one it
@@ -1888,6 +1920,31 @@ function mappedTags(tagRouter: TagRouter, entryAndInheritedTags: string[], conte
 	};
 }
 
+/**
+ * The tags of a document the vault sent, with every mapped page tag made a document tag (send spec
+ * §6.1, ADR 0002): one note per mapped tag for the whole document, and no page notes. The user tags
+ * pages, not documents, and the review of a spec is the whole document -- marks on the pages left
+ * untagged included. `promoted` is what the document gate needs later and cannot see in the listing.
+ *
+ * A tag on a page the document no longer has is dropped, as `planUnits` drops it for a page note.
+ * Called by the pre-scan and the run alike, so both plan the same units (§12 F1).
+ */
+function promotePageTags(mapped: MappedTags, livePageIds: ReadonlySet<string>): { mapped: MappedTags; promoted: string[] } {
+	const promoted = [...new Set(mapped.page.filter((pageTag) => livePageIds.has(pageTag.pageId)).map((pageTag) => pageTag.name))];
+	return { mapped: { notebook: [...new Set([...mapped.notebook, ...promoted])], page: [] }, promoted };
+}
+
+/**
+ * The tags the document gate holds a document's active notebook rows against: the listing's, and for
+ * a sent document the page tags its last opening promoted (send spec §6.1). The listing carries no
+ * page tags, so without them a note from a promoted page tag never matches, and every reviewed sent
+ * document is opened on every sync -- the cost #101 removed once. They are current whenever the hash
+ * is: a page tag lives in `.content`, and changing it changes the document's hash.
+ */
+function gateTags(sends: StoredVaultSends, docId: string, entryAndInheritedTags: string[]): string[] {
+	return [...entryAndInheritedTags, ...(sendFor(sends, docId)?.promotedTags ?? [])];
+}
+
 /** One note this document would produce, with every decision behind it already made. */
 interface UnitPlan {
 	/** null for a notebook-tag unit. */
@@ -2115,6 +2172,7 @@ async function scanWorkload(
 	report: (progress: SyncProgress) => void,
 	shouldStop: () => boolean,
 	rerenderDue: (row: SyncIndexRow) => boolean,
+	sends: StoredVaultSends,
 ): Promise<Workload> {
 	const { api, tagRouter } = deps;
 	const unreadable = new Map<string, string>();
@@ -2125,7 +2183,7 @@ async function scanWorkload(
 	for (const entry of documents) {
 		if (shouldStop()) return { total: 0, unreadable, stopped: true };
 		const tags = entryAndInheritedTagNames(entry, entriesById);
-		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags, rerenderDue)) candidates.push({ entry, tags });
+		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, gateTags(sends, entry.id, tags), rerenderDue)) candidates.push({ entry, tags });
 	}
 
 	let checked = 0;
@@ -2165,7 +2223,7 @@ async function scanWorkload(
 				rows,
 				tagRouter,
 				entry,
-				mapped,
+				isCovered(sends, entry.id) ? promotePageTags(mapped, new Set(docPages.map((page) => page.id))).mapped : mapped,
 				docPages,
 				(pageId) => (pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash)),
 				rerenderDue,
@@ -2219,7 +2277,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt, deps.manual ?? false);
 	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
+		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [], vaultSendNotices: [], screenSeen: null, sendMarks: {} };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -2260,6 +2318,52 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (unit === null) return;
 		textLayer = textLayer === null ? unit : { pages: textLayer.pages + unit.pages, layered: textLayer.layered + unit.layered, placed: textLayer.placed + unit.placed, leftOut: textLayer.leftOut + unit.leftOut };
 	};
+	// Read off what a render already parsed, so the guess for *Tablet* costs no request of its own.
+	let screenSeen: ScreenSeen | null = null;
+	const sawScreen = (entry: Entry, scenes: readonly (RmPage | null)[]): void => {
+		screenSeen = newerScreen(screenSeen, screenDeclaredBy(scenes, entry.lastModified));
+	};
+	// Read once, before the pre-scan: the scan and the run must agree on which documents the vault sent,
+	// or the bar would count page units the run then writes as one note. The origin line alone reads
+	// the live record, so a rename made during the run is in the note it writes.
+	const sends = deps.vaultSends?.() ?? {};
+	const sendMarks: Record<string, SyncMarks> = {};
+	const markPromoted = (docId: string, promoted: string[]): void => {
+		const before = sendFor(sends, docId)?.promotedTags ?? [];
+		if (before.length !== promoted.length || promoted.some((tag) => !before.includes(tag))) sendMarks[docId] = { ...sendMarks[docId], promotedTags: promoted };
+	};
+	const vaultSendNotices: string[] = [];
+	/**
+	 * "Marks on it but no sync tag" (send spec §6.5), for a sent copy no mapped tag reaches. The listing
+	 * does not say whether a document has ink, so this costs one look at its files -- once per change of
+	 * its hash, and never again once said. A look that fails says nothing and is not remembered, so the
+	 * next sync looks again. An entry this build cannot read has no flags to keep, and is left alone.
+	 * Neither is a copy with any row, orphaned included: a note did come back, only its tag went since.
+	 */
+	const sayNoTag = async (entry: Entry): Promise<void> => {
+		const send = sendFor(sends, entry.id);
+		if (send === null || send.saidNoTag || send.inkCheckedHash === entry.hash) return;
+		if (Object.values(rows).some((row) => row.docId === entry.id)) return;
+		let marked: boolean;
+		try {
+			marked = (await getDocumentFiles(api, entry.id, entry.hash)).pages.size > 0;
+		} catch (error) {
+			skipErrors.push(`failed to look for marks on "${entry.visibleName}": ${errorText(error)}`);
+			return;
+		}
+		sendMarks[entry.id] = { ...sendMarks[entry.id], inkCheckedHash: entry.hash, ...(marked ? { saidNoTag: true as const } : {}) };
+		if (marked) vaultSendNotices.push(noTagNotice(entry.visibleName, tagRouter.tags()));
+	};
+	/**
+	 * "Handwriting not read" (§6.5), once per sent copy however many of its notes were built without it.
+	 * Not for an entry this build cannot read: the flag would go into it and never be read back.
+	 */
+	const sayUnread = (entry: Entry): void => {
+		const send = sendFor(sends, entry.id);
+		if (send === null || send.saidUnread || sendMarks[entry.id]?.saidUnread) return;
+		sendMarks[entry.id] = { ...sendMarks[entry.id], saidUnread: true };
+		vaultSendNotices.push(unreadNotice(entry.visibleName));
+	};
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -2295,6 +2399,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			skipErrors,
 			backendWarnings,
 			zoteroNotices,
+			vaultSendNotices,
+			screenSeen,
+			sendMarks,
 		};
 	};
 
@@ -2306,7 +2413,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const documents = entries.filter((entry) => entry.type === "DocumentType" && !isInTrash(entry, entriesById));
 	documentIds = documents.map((entry) => entry.id);
 
-	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop, rerenderDue);
+	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop, rerenderDue, sends);
 	// Nothing has been written yet, so there is nothing to checkpoint -- but the caller still has to
 	// hear that this run was stopped rather than finished.
 	if (workload.stopped) return stopHere();
@@ -2325,7 +2432,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// The scan already failed to read this one, and said so. Trying again would report it twice.
 		if (workload.unreadable.has(entry.id)) continue;
-		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags, rerenderDue))) continue; // level 2
+		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, gateTags(sends, entry.id, entryAndInheritedTags), rerenderDue))) continue; // level 2
 
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
@@ -2338,10 +2445,17 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		}
 
 		const mapped = mappedTags(tagRouter, entryAndInheritedTags, content);
+		const covered = isCovered(sends, entry.id);
 
 		// Nothing mapped now, and nothing previously active to potentially orphan -- truly nothing to do.
 		const hasPreviouslyActiveRow = hasRowWithStatus(rows, entry.id, "active");
-		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow) continue;
+		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow) {
+			if (covered) {
+				markPromoted(entry.id, []);
+				await sayNoTag(entry);
+			}
+			continue;
+		}
 
 		// A PDF-backed doc's pages are a source PDF with handwritten annotations layered on top. The
 		// render composites the two: each page shows the source page with its `.rm` annotation scene
@@ -2366,6 +2480,15 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const { pages: pageHashes, images: imageFiles, epub: epubFile } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
 		const docPages = orderedPages(content, liveIds, pdfBacked);
+		// A document the vault sent comes back as one note per tag (send spec §6.1), and the page tags
+		// that made it so are handed back for the document gate of the next sync.
+		let planned = mapped;
+		if (covered) {
+			const promotion = promotePageTags(mapped, new Set(docPages.map((page) => page.id)));
+			planned = promotion.mapped;
+			markPromoted(entry.id, promotion.promoted);
+		}
+		const sent = covered ? sendFor(sends, entry.id) : null;
 
 		// Counted from the pages that have a source page, so a page *added* on the device -- which
 		// changes the document's own page count and nothing about the book -- is not mistaken for a
@@ -2411,7 +2534,26 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		 * bytes of every already-linked PDF in the account are never read for this at all.
 		 */
 		let sourceMd5: Promise<string> | null = null;
-		const zoteroMd5 = pdfBacked ? () => (sourceMd5 ??= getSourcePdf().then(md5Hex)) : undefined;
+		// A note the vault printed is no paper in anyone's library, so it is never matched and never asked
+		// about (send spec §6.4). A PDF the vault sent may well be one, and passes like any PDF.
+		const zoteroMd5 = pdfBacked && sent?.kind !== "note" ? () => (sourceMd5 ??= getSourcePdf().then(md5Hex)) : undefined;
+
+		/**
+		 * What a sent document's note carries beyond any other's (send spec §6.2, §6.3), or undefined for
+		 * every other document. Recomputed for each write and never a reason for one (07 #11): the origin
+		 * is read from the live record, so a rename during the run is already in it, and whether the file
+		 * is still in the vault is asked here and nowhere else.
+		 */
+		const sentNote = async (tag: string): Promise<SentNote | undefined> => {
+			if (!covered) return undefined;
+			const ownNotes = Object.values(rows)
+				.filter((row) => row.docId === entry.id && row.tag !== tag && row.status === "active")
+				.map((row) => row.notePath);
+			const send = sendFor(deps.vaultSends?.() ?? sends, entry.id) ?? sent;
+			if (send === null) return { originLine: null, sentOn: formatLocalDate(new Date(deps.now())), ownNotes };
+			const sentOn = formatLocalDate(new Date(send.sentAt));
+			return { originLine: originLine(send.origin, await deps.noteStore.exists(send.origin), sentOn), sentOn, ownNotes };
+		};
 
 		// The book behind a rendered EPUB, on the same terms: at most once per doc, and only when a
 		// digest has something whose wording is worth correcting (see `DigestSource.book`).
@@ -2461,6 +2603,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				// already says which of the two it lost.
 				skipErrors.push(...build.ocrWarnings.map((warning) => `Digest of ${unit}: ${warning}`));
 				pushUnique(backendWarnings, build.ocrWarnings);
+				// Only ever above zero with *Your notes on PDFs* off: the sender is told what the switch would bring.
+				if (covered && build.unreadHandwriting > 0) sayUnread(entry);
 				// "unavailable" lost notes as surely as "failed" does. It used to keep the old retry, and so
 				// wrote none where there was none: a PDF synced before the downloaded model was ready, or one
 				// whose notes partly failed before the local engine stopped -- `worstOcrStatus` reports that
@@ -2555,7 +2699,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 		};
 
-		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash, rerenderDue);
+		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, planned, docPages, pageContentHash, rerenderDue);
 		for (const row of plan.orphan) orphanRow(rows, row);
 
 		for (const unit of plan.notebook) {
@@ -2580,6 +2724,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				if (pdfBacked) {
 					const composite = await annotatedPdfPages(api, entry.id, docPages, pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
+					sawScreen(entry, composite.map((page) => page.annotations));
 					ocrPages = annotationOcrPages(composite);
 					highlights = collectHighlights(composite.map((page, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: page.annotations?.highlights ?? [] })));
 					digestPages = composite.map((page, i) => ({
@@ -2594,6 +2739,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					ocrPages = notebookOcrPages(scenes, pageOrder);
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
+					sawScreen(entry, scenes);
 					renderScenes = scenes;
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
@@ -2645,6 +2791,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const { written, emptyBlock, textLayer: unitLayerTally } = await writeUnit(
 				writeDeps,
 				{
+					// A sent document has no page units (`promotePageTags`), so only this branch carries it.
+					sent: await sentNote(tag),
 					ocrPages: split.transcribe,
 					unitPages: ocrPages.length,
 					blank: isBlankUnit(ocrPages),
@@ -2743,6 +2891,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const pageRef = pageRefById.get(unit.pageId)!;
 					const composite = await annotatedPdfPages(api, entry.id, [pageRef], pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
+					sawScreen(entry, composite.map((page) => page.annotations));
 					// A single-page embed, so the `#page=` anchor is 1 -- the same ordinals `collectHighlights` gets.
 					ocrPages = [{ scene: composite[0]?.annotations ?? null, pageLabel: pageIndex, embedPage: 1 }];
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: composite[0]?.annotations?.highlights ?? [] }]);
@@ -2758,6 +2907,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = [await renderPage(api, entry.id, unit.pageId, pageHashes.get(unit.pageId))];
 					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles));
+					sawScreen(entry, scenes);
 					renderScenes = scenes;
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
 					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
@@ -2875,7 +3025,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices };
+	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices, vaultSendNotices, screenSeen, sendMarks };
 }
 
 export interface ReTranscribeDeps {

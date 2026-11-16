@@ -143,6 +143,23 @@
       file: src/sync-engine.test.ts
       test: "edited sync blocks > still re-creates an orphaned row's note when the user deleted it"
 
+    # A sent document's note names its origin with a link, and Obsidian rewrites that link when the
+    # origin is renamed (send spec §11 P1, §12 F5). The first row failed before the line was left out
+    # of the hash: the rewrite read as the user's edit.
+    - id: G3.5
+      scenario: A sent document's origin is renamed with "Automatically update internal links" on, so Obsidian rewrites the link inside its note; the document changes on the tablet
+      expect: "The note is written, nothing counted as edited, and its line names the new path. Obsidian's rewrite is not the user's edit"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the origin line (§6.3) > still writes the note after Obsidian rewrote the link on a rename, and names the new path"
+
+    - id: G3.6
+      scenario: The user writes a line of their own into a sent document's note; the document changes on the tablet
+      expect: "The note is left alone and counted as edited. Only the origin line is out of the hash"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a document the vault sent (send spec §6, ADR 0002) > the origin line (§6.3) > still leaves the note alone when the user wrote anywhere else in its block"
+
 - feature: G10
   name: Moves preserve backlinks
   code: src/vault-stores.ts

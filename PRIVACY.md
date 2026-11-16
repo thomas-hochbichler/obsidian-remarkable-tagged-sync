@@ -18,6 +18,10 @@ and your Readwise library if you connect them. They are described in detail in t
 [Network use](./README.md#network-use) section, which is the authoritative list. Nothing there
 goes to me.
 
+When you [send a file from your vault](./README.md#send-from-the-vault), the PDF you send — and with
+a note, its text and the images it embeds — goes to your own reMarkable account, or, with Pro, to
+your tablet over your own network. Nothing of it goes to me.
+
 ### The licence check — the only call added by Tagged Sync Pro
 
 If, and only if, you use a paid feature, the plugin contacts **`polar.sh`** to check that your
@@ -55,7 +59,9 @@ The plugin contains no other call to a server of mine.
 
 Your licence key, the activation id, the date of the last successful check, the trial start date
 and its signature are stored in the plugin's `data.json`, inside your vault, next to the reMarkable device token that
-is already there — as is your Zotero API key, if you set one up. Your Readwise access token is not in that file: it sits in Obsidian's Keychain on each computer, encrypted by your operating system, and is never synced. That file is yours. If your vault is synced, the file travels with it — which is
+is already there — as is your Zotero API key, if you set one up, and the record of what you sent
+from the vault: the file's path in your vault, the document's id on the tablet, its name there and
+the date. Your Readwise access token is not in that file: it sits in Obsidian's Keychain on each computer, encrypted by your operating system, and is never synced. That file is yours. If your vault is synced, the file travels with it — which is
 intended, because one vault is one activation.
 
 ## 3. What I store when you buy

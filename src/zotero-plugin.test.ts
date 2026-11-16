@@ -76,7 +76,7 @@ function harness(
 		namesIn: async () => [],
 		putPdf: async (document) => {
 			sent.push(document);
-			return { docId: `doc-${sent.length}` };
+			return { docId: `doc-${sent.length}`, folderId: "folder-1" };
 		},
 	};
 	harnessed.host = {
@@ -363,7 +363,7 @@ describe("a paper that is already on the tablet (§2.5)", () => {
 	// name, and that is the same question.
 	it("asks as well when the tablet's folder holds the name and this vault has no link to it", async () => {
 		const harnessed = harness({
-			transport: { label: "reMarkable's cloud", namesIn: async () => ["Prompting"], putPdf: async () => ({ docId: "doc-1" }) },
+			transport: { label: "reMarkable's cloud", namesIn: async () => ["Prompting"], putPdf: async () => ({ docId: "doc-1", folderId: "folder-1" }) },
 		});
 
 		const done = sendZoteroPdf(harnessed.host);

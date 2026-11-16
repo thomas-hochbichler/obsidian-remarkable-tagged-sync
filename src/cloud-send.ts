@@ -1,22 +1,34 @@
 /**
- * Putting one PDF into the reMarkable cloud (spec §2.4).
+ * Putting one PDF into the reMarkable cloud (spec §2.4), and -- for a vault send only -- looking at
+ * and clearing away the vault's own earlier copy of it (send spec §3, ADR 0001).
  *
  * The cloud half of Send, and the short one: rmapi-js already knows how to add a document, so this
  * is the folder lookup, the tag, and the one failure that is normal rather than exceptional.
  *
  * **`GenerationError` is not an error here.** The cloud's low-level API is optimistic: an upload
  * carries the generation it read, and anything else adding a document in between -- the tablet
- * itself, a phone, a second Obsidian -- makes ours stale. rmapi-js reports that as its own error
- * class and expects the caller to try again, which is what the three attempts below are. They are
- * three and not unlimited because a generation that keeps moving is a busy account, and a command
- * the user pressed should fail in seconds rather than loop.
+ * itself, a phone, a second Obsidian -- makes ours stale. rmapi-js 14 retries that itself, up to ten
+ * times with a growing pause, and only then throws its own error class. The three attempts below
+ * are wrapped around those ten: they predate them, and they are three and not unlimited because a
+ * generation that keeps moving is a busy account, and a command the user pressed should fail in
+ * seconds rather than loop. The trash below gets rmapi-js's ten and nothing more -- it is tidying,
+ * and a failed tidy leaves the document where it was.
  */
 
-import { GenerationError, type Entry, type RemarkableApi } from "rmapi-js";
-import type { SendDocument } from "./zotero-send";
+import { GenerationError, HashNotFoundError, type Entry, type RawRemarkableApi, type RemarkableApi } from "rmapi-js";
+import { getDocumentFiles } from "./page-hash";
+import { isInTrash } from "./remarkable-tags";
+import type { CopyRef, EarlierCopy, EarlierCopyLook, EarlierCopyState, SendDocument } from "./zotero-send";
 
-/** What a send needs of the cloud: two writes and the listing that finds the folder. */
-export type CloudSendApi = Pick<RemarkableApi, "listItems" | "putFolder" | "putPdf">;
+/**
+ * What a send needs of the cloud: two writes and the listing that finds the folder -- and, for the
+ * earlier copy of a vault send, the two reads that tell whether it was written on and the one move
+ * that takes it to the trash. `delete` and not `move` or `purge`: the trash, which the tablet can
+ * restore from, is the only place a send ever takes anything (ADR 0001).
+ */
+export type CloudSendApi = Pick<RemarkableApi, "listItems" | "putFolder" | "putPdf" | "getContent" | "delete"> & {
+	readonly raw: Pick<RawRemarkableApi, "getEntries">;
+};
 
 /** How many times a stale generation is retried before the send gives up. */
 export const GENERATION_ATTEMPTS = 3;
@@ -74,11 +86,99 @@ export async function namesInCloudFolder(api: CloudSendApi, name: string): Promi
 	return items.filter((item) => item.type === "DocumentType" && folders.has(item.parent ?? "")).map((item) => item.visibleName);
 }
 
-/** Adds one PDF and answers the id the cloud gave it. */
-export async function sendToCloud(api: CloudSendApi, document: SendDocument): Promise<{ docId: string }> {
-	const parent = await folderId(api, document.folder);
+/**
+ * Adds one PDF and answers the id the cloud gave it, and the folder it went into.
+ *
+ * A folder id handed in is taken as it is: a vault send's look found it in a listing made a moment
+ * before, and listing the account again would cost as long as the upload. The folder deleted on the
+ * tablet in that moment is the one case it misses -- the document then sits in a folder in the
+ * trash, where the user just put the folder.
+ */
+export async function sendToCloud(api: CloudSendApi, document: SendDocument): Promise<{ docId: string; folderId: string }> {
+	const parent = document.folderId ?? (await folderId(api, document.folder));
 	const entry = await withGenerationRetries((refresh) =>
 		api.putPdf(document.visibleName, document.bytes, { parent, tags: [], refresh }),
 	);
-	return { docId: entry.id };
+	return { docId: entry.id, folderId: parent };
+}
+
+/**
+ * What the vault's earlier copies of one origin are now -- {@link SendTransport.earlierCopies}, send
+ * spec §3.
+ *
+ * One listing for all of them, and for each copy the tests in the order of what they cost: what the
+ * listing says comes free (in the trash or not there, moved, renamed, pinned, tagged), and only a
+ * copy that passes all of those costs one `getContent` (a page tag) and one `getEntries` (an `.rm`
+ * file, which any pen stroke or highlight leaves). The first test it fails decides, and the rest are
+ * not asked. Anything the listing cannot vouch for -- no recorded folder or name -- is the user's:
+ * the error always falls on the side of asking.
+ *
+ * A failure anywhere rejects the whole look rather than classing one copy and not another; the send
+ * then goes on and clears nothing (P17).
+ *
+ * `kept` -- the copies the user chose to keep -- are not classed or looked into (P15), only left out
+ * of the strangers.
+ */
+export async function lookAtEarlierCopies(
+	api: CloudSendApi,
+	copies: readonly EarlierCopy[],
+	folder: string,
+	visibleName: string,
+	kept: readonly string[] = [],
+): Promise<EarlierCopyLook> {
+	const items = await api.listItems();
+	const byId = new Map(items.map((item) => [item.id, item]));
+
+	const classed: EarlierCopyState[] = [];
+	for (const copy of copies) {
+		const item = byId.get(copy.docId);
+		if (item === undefined || isInTrash(item, byId)) {
+			classed.push({ docId: copy.docId, state: "gone" });
+			continue;
+		}
+		const ref: CopyRef = { id: item.id, hash: item.hash };
+		classed.push({ docId: copy.docId, state: (await isUntouched(api, item, copy)) ? "untouched" : "users", ref });
+	}
+
+	// The folder this send puts the new one into, and no other of that name: "beside it" is what the
+	// notice says. A copy of this origin is never a stranger, whatever its state -- a kept one included,
+	// which the notice already names as still there.
+	const ours = new Set([...copies.map((copy) => copy.docId), ...kept]);
+	const sendFolder = existingFolderIds(items, folder)[0];
+	const strangerNamed =
+		sendFolder !== undefined &&
+		items.some((item) => item.type === "DocumentType" && item.parent === sendFolder && item.visibleName === visibleName && !ours.has(item.id));
+
+	return { copies: classed, strangerNamed, ...(sendFolder === undefined ? {} : { folderId: sendFolder }) };
+}
+
+/** The tests of {@link lookAtEarlierCopies}, cheapest first. */
+async function isUntouched(api: CloudSendApi, item: Entry, copy: EarlierCopy): Promise<boolean> {
+	if (copy.folderId === undefined || item.parent !== copy.folderId) return false;
+	if (copy.name === undefined || item.visibleName !== copy.name) return false;
+	if (item.pinned) return false;
+	if ((item.tags ?? []).length > 0) return false;
+	const content = await api.getContent(item);
+	if ("pageTags" in content && (content.pageTags ?? []).length > 0) return false;
+	// An `.rm` that outlived its strokes counts as ink: erased ink cannot be told from ink.
+	return (await getDocumentFiles(api, item.id, item.hash)).pages.size === 0;
+}
+
+/**
+ * Moves one earlier copy to the tablet's trash -- {@link SendTransport.moveToTrash}. Answers whether
+ * it went.
+ *
+ * `ref` is the `{id, hash}` of the look's listing, and that is the guard: rmapi-js finds the entry by
+ * both, so a copy the tablet changed since -- opened, written on -- is not found, and the copy stays
+ * rather than going to the trash as something it no longer is. That is "not cleared", not a failed
+ * send. Every other failure is the caller's, unchanged.
+ */
+export async function moveCopyToTrash(api: CloudSendApi, ref: CopyRef): Promise<boolean> {
+	try {
+		await api.delete({ id: ref.id, hash: ref.hash });
+		return true;
+	} catch (error) {
+		if (error instanceof HashNotFoundError) return false;
+		throw error;
+	}
 }

@@ -54,6 +54,9 @@ import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
+import { registerVaultSendCommands } from "./vault-send-plugin";
+import { noteScreenSeen } from "./vault-send-settings";
+import { applySyncMarks, dropExpired, markListedSends, remapOrigins } from "./vault-sends";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
 import { deletedBookOf, readwiseBookUrl } from "./readwise-links";
@@ -78,6 +81,7 @@ import {
 	LONG_NOTICE_MS,
 	outcomeNotice,
 	partialOutcomeNotices,
+	vaultSendNoticeTexts,
 	type PartialOutcome,
 	modelNotReadyNotice,
 	platformGapNotice,
@@ -481,6 +485,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// The Pro half -- the desktop-app connection and write-back -- is refused in place where it
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
+		// Free as well (send spec §1): a note or a PDF from the vault onto the tablet.
+		registerVaultSendCommands(this.zoteroHost());
 
 		// Free: it only opens a book, and a lapsed licence must not take the way there from someone's library.
 		this.addCommand({
@@ -549,18 +555,23 @@ export default class TaggedSyncPlugin extends Plugin {
 	/**
 	 * Keeps `data.json` note paths accurate when the user renames or moves a synced note (or a folder
 	 * containing one) -- the note has no frontmatter to re-find it by, so without this its row would
-	 * strand and the next sync would duplicate it. Ignored during a sync: a sync moves notes itself
-	 * and replaces the whole index when it finishes, so reacting mid-run would only persist a transient
-	 * state the sync immediately overwrites.
+	 * strand and the next sync would duplicate it. The rows are left alone during a sync: a sync moves
+	 * notes itself and replaces the whole index when it finishes, so reacting mid-run would only
+	 * persist a transient state the sync immediately overwrites.
+	 *
+	 * The origins of sent documents follow the rename always, during a sync too (send spec §12 F3).
+	 * The sync never replaces that record with a copy of its own; it hands back marks applied to the
+	 * live map, so what is written here survives the sync's save.
 	 */
 	private async onVaultRename(file: TAbstractFile, oldPath: string): Promise<void> {
-		if (this.syncing) return;
 		const kind = file instanceof TFolder ? "folder" : file instanceof TFile ? "file" : null;
 		if (kind === null) return;
-		const rows = remapRows(this.data.syncIndex.rows, { kind, from: oldPath, to: file.path });
-		if (rows === null) return;
-		this.data.syncIndex.rows = rows;
-		await this.saveData(this.data);
+		const renamed = { kind, from: oldPath, to: file.path } as const;
+		const sends = remapOrigins(this.data.vaultSends, renamed);
+		if (sends !== null) this.data.vaultSends = sends;
+		const rows = this.syncing ? null : remapRows(this.data.syncIndex.rows, renamed);
+		if (rows !== null) this.data.syncIndex.rows = rows;
+		if (sends !== null || rows !== null) await this.saveData(this.data);
 	}
 
 	/**
@@ -781,6 +792,8 @@ export default class TaggedSyncPlugin extends Plugin {
 						},
 						vaultName: () => this.app.vault.getName(),
 					}),
+					// The live map, not a copy: the run reads it, and what it finds comes back as marks.
+					vaultSends: () => this.data.vaultSends,
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -806,6 +819,16 @@ export default class TaggedSyncPlugin extends Plugin {
 			// document is on the tablet while listings keep finding it, tagged or not. `null` means the
 			// run never listed -- the root hash was unchanged, so nothing on the tablet moved.
 			if (result.documentIds !== null) this.data.zoteroLinks = markListed(this.data.zoteroLinks, result.documentIds, this.nowIso());
+			// The vault's own sends by the same listing (send spec §5), on the live map: a rename or a
+			// send made while the run went on is in it already.
+			if (result.documentIds !== null) {
+				const now = this.nowIso();
+				this.data.vaultSends = dropExpired(markListedSends(this.data.vaultSends, result.documentIds, now), new Date(now));
+			}
+			// What the run found about each sent document, onto the same live map (§5).
+			this.data.vaultSends = applySyncMarks(this.data.vaultSends, result.sendMarks ?? {});
+			// The guess for *Tablet* (send spec §7): only a newer document than the one it came from moves it.
+			if (result.screenSeen) this.data.vaultSend = noteScreenSeen(this.data.vaultSend, result.screenSeen);
 
 			// The one-time pass that brings already-written notes up to the current managed key set
 			// (#107, #109). Without it a vault that has settled would never receive a new key at all:
@@ -859,6 +882,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Both of these used to be console-only while the notice still reported plain success. A
 			// stopped run's skips and failures are just as real as a completed one's.
 			if (speak) this.reportPartialOutcomes(result);
+			// Once per sent copy, and already marked said: a background run says these too (send spec §6.5).
+			else for (const notice of vaultSendNoticeTexts(result.vaultSendNotices ?? [])) new Notice(notice.message, notice.timeout);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");

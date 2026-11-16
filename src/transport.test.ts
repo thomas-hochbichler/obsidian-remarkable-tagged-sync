@@ -14,11 +14,14 @@ vi.mock("rmapi-js", () => ({
 		],
 		putFolder: async () => ({ id: "folder-1" }),
 		putPdf: async () => ({ id: "doc-1" }),
+		getContent: async () => ({ pageTags: [] }),
+		delete: vi.fn(async (ref: { id: string; hash: string }) => ref),
 	})),
 	auth: vi.fn(),
 	register: vi.fn(),
 	// Imported by `cloud-send.ts`, which the cloud transport's own `putPdf` goes through.
 	GenerationError: class GenerationError extends Error {},
+	HashNotFoundError: class HashNotFoundError extends Error {},
 }));
 
 function cloudWith(auth: Partial<RemarkableAuth>): CloudTransport {
@@ -107,7 +110,43 @@ describe("sending a PDF through the cloud", () => {
 		const session = vi.fn(async () => "token");
 		const cloud = cloudWith({ isConnected: () => true, session });
 
-		expect(await cloud.putPdf({ visibleName: "Prompting", bytes: new Uint8Array([37]), folder: "Zotero" })).toEqual({ docId: "doc-1" });
+		expect(await cloud.putPdf({ visibleName: "Prompting", bytes: new Uint8Array([37]), folder: "Zotero" })).toEqual({ docId: "doc-1", folderId: "folder-1" });
+		expect(session).toHaveBeenCalled();
+	});
+
+	// A vault send's look and its trash (send spec §3) take the same road: a session of their own,
+	// never the engine's read-only one.
+	it("looks at a vault send's earlier copies through a session of its own", async () => {
+		const session = vi.fn(async () => "token");
+		const cloud = cloudWith({ isConnected: () => true, session });
+
+		// The mocked listing has the copy at its recorded place and name but no hash; the look reads
+		// its page tags and its files, and the mock has neither tags nor ink.
+		const { session: open } = (await import("rmapi-js")) as unknown as { session: ReturnType<typeof vi.fn> };
+		open.mockImplementationOnce(() => ({
+			raw: { getEntries: async () => ({ entries: [] }) },
+			listItems: async () => [
+				{ id: "folder-1", visibleName: "Zotero", parent: "", type: "CollectionType" },
+				{ id: "doc-1", hash: "h-1", visibleName: "Prompting", parent: "folder-1", type: "DocumentType", pinned: false },
+				// A copy the user kept, handed on by id: no stranger.
+				{ id: "doc-2", hash: "h-2", visibleName: "Prompting", parent: "folder-1", type: "DocumentType", pinned: false },
+			],
+			getContent: async () => ({ pageTags: [] }),
+		}));
+
+		expect(await cloud.earlierCopies([{ docId: "doc-1", name: "Prompting", folderId: "folder-1" }], "Zotero", "Prompting", ["doc-2"])).toEqual({
+			copies: [{ docId: "doc-1", state: "untouched", ref: { id: "doc-1", hash: "h-1" } }],
+			strangerNamed: false,
+			folderId: "folder-1",
+		});
+		expect(session).toHaveBeenCalled();
+	});
+
+	it("moves an earlier copy to the trash through a session of its own, too", async () => {
+		const session = vi.fn(async () => "token");
+		const cloud = cloudWith({ isConnected: () => true, session });
+
+		expect(await cloud.moveToTrash({ id: "doc-1", hash: "h-1" })).toBe(true);
 		expect(session).toHaveBeenCalled();
 	});
 

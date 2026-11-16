@@ -51,6 +51,21 @@ export interface NoteFields {
 	 * Zotero's business and where it goes is this module's.
 	 */
 	zoteroLine: string | null;
+	/** Set for a document the vault sent (send spec §6.2, §6.3), absent for everything else on the tablet. */
+	sent?: SentNote;
+}
+
+/**
+ * What the note of a document the vault sent carries beyond any other: its name ends `— marked up`,
+ * so the vault never holds two notes of the origin's name, and its callout names the origin.
+ */
+export interface SentNote {
+	/** The callout's `Sent from …` line ({@link originLine}), or null for a record this build cannot read. */
+	originLine: string | null;
+	/** The send's date, `YYYY-MM-DD` in local time: what a name taken by another document's note takes first. */
+	sentOn: string;
+	/** This document's own notes under its other mapped tags. A name one of them holds goes straight to the ladder. */
+	ownNotes: readonly string[];
 }
 
 export interface NoteStore {
@@ -171,10 +186,38 @@ function capUtf8Bytes(name: string, maxBytes: number): string {
 	return name.slice(0, cut);
 }
 
-/** `<notebook>` for a notebook-level note, `<notebook> — Page N` for a page-level one. */
-export function deriveBaseName(notebookName: string, pageIndex: number | null): string {
+/**
+ * `<notebook>` for a notebook-level note, `<notebook> — Page N` for a page-level one, and
+ * `<document> — marked up` for the one note of a document the vault sent (send spec §6.2) -- which
+ * otherwise would be named exactly like the note it was printed from.
+ */
+export function deriveBaseName(notebookName: string, pageIndex: number | null, sent = false): string {
 	const sanitized = sanitizeFilenamePart(notebookName);
+	if (sent) return `${sanitized} — marked up`;
 	return pageIndex === null ? sanitized : `${sanitized} — Page ${pageIndex}`;
+}
+
+/** What starts the origin line inside the callout; the hand-edit check knows the line by it. */
+const SENT_LINE_START = "Sent from ";
+
+// A wikilink reads `#` as a heading, `^` as a block, `|` as the display text and the brackets as its
+// own end, so a path holding one of them gets a Markdown link instead.
+const WIKILINK_BREAKERS = /[#^[\]|]/;
+
+/**
+ * The callout line that names a sent document's origin (send spec §6.3): a link while the file is in
+ * the vault, its name as text once it is gone.
+ *
+ * The link carries the full vault path -- a note without `.md`, a PDF with its extension, as Obsidian
+ * writes them -- and the file's name as display text. Obsidian keeps either kind of link right
+ * through a rename; the hand-edit check leaves the line out for exactly that reason.
+ */
+export function originLine(origin: string, inVault: boolean, sentOn: string): string {
+	const file = origin.slice(origin.lastIndexOf("/") + 1);
+	const name = file.replace(/\.[^.]*$/, "");
+	if (!inVault) return `${SENT_LINE_START}"${name}" on ${sentOn} — no longer in the vault`;
+	if (WIKILINK_BREAKERS.test(origin)) return `${SENT_LINE_START}[${name.replace(/[[\]]/g, "\\$&")}](<${origin}>) on ${sentOn}`;
+	return `${SENT_LINE_START}[[${origin.replace(/\.md$/, "")}|${name}]] on ${sentOn}`;
 }
 
 /**
@@ -374,8 +417,10 @@ function buildManagedBlock(fields: NoteFields): string {
 	// Inside the callout rather than beside it: the line is about this note's provenance, which is what
 	// the callout already says, and outside it would be a loose line above the embed that the reader
 	// cannot collapse. It is part of the managed block and therefore part of its hash, so a document
-	// that gains its Zotero link -- or loses it -- registers as a change and is rewritten.
-	const callout = fields.zoteroLine === null ? OWNERSHIP_CALLOUT : `${OWNERSHIP_CALLOUT}\n> ${fields.zoteroLine}`;
+	// that gains its Zotero link -- or loses it -- registers as a change and is rewritten. The origin
+	// line of a sent document goes first, for the same reason, and is the one line the hash leaves out.
+	const lines = [fields.sent?.originLine ?? null, fields.zoteroLine].filter((line): line is string => line !== null);
+	const callout = [OWNERSHIP_CALLOUT, ...lines.map((line) => `> ${line}`)].join("\n");
 	const embed = `${callout}\n\n![[${fields.embedPath}]]\n`;
 	const sections = [
 		fields.digest === "" ? renderHighlights(fields.embedPath, fields.highlights) : `## Digest\n${fields.digest}`,
@@ -442,12 +487,28 @@ export function extractManagedBlock(content: string): string | null {
  * next sync can tell its own output from a block the user has edited by hand.
  */
 export function managedBlockHash(fields: NoteFields): string {
-	return hashString(buildManagedBlock(fields));
+	return hashString(withoutOriginLine(buildManagedBlock(fields)));
 }
 
 /** Hash of a block read back off disk, for comparison against a row's stored {@link managedBlockHash}. */
 export function blockHashOf(block: string): string {
-	return hashString(block);
+	return hashString(withoutOriginLine(block));
+}
+
+/**
+ * The block as the hand-edit check sees it: without a sent document's origin line (send spec §11 P1).
+ *
+ * Obsidian rewrites the link in that line when the origin is renamed, and hashed, its rewrite read as
+ * the user's own edit -- the note was never written again (§12 F5, reproduced in the engine's tests).
+ * The line is recomputed at every write anyway. Only the line right below the callout's own two is
+ * taken, so a quoted "Sent from" anywhere in a transcript stays an edit, and a block without such a
+ * line hashes exactly as before.
+ */
+function withoutOriginLine(block: string): string {
+	const start = `${OWNERSHIP_CALLOUT}\n> ${SENT_LINE_START}`;
+	if (!block.startsWith(start)) return block;
+	const rest = block.slice(start.length);
+	return `${OWNERSHIP_CALLOUT}${rest.slice(rest.search(/\n|$/))}`;
 }
 
 interface ParsedNote {
@@ -503,17 +564,30 @@ export function buildNoteContent(fields: NoteFields, existingContent: string | n
  * "Occupies" is `store.exists`, not `store.read`: see the interface. A path this returns is one the
  * vault will actually accept, which is the whole difference.
  */
-async function resolveFreePath(store: NoteStore, folder: string, baseName: string, tag: string, docId: string): Promise<string> {
+async function resolveFreePath(store: NoteStore, folder: string, baseName: string, tag: string, docId: string, sent?: SentNote): Promise<string> {
+	const base = sent === undefined ? baseName : await sentBaseName(store, folder, baseName, sent);
 	const suffixes = ["", ` (${sanitizeFilenamePart(tag)})`, ` (${docId.slice(0, 6)})`];
 
 	for (const suffix of suffixes) {
-		const path = joinFolder(folder, `${baseName}${suffix}.md`);
+		const path = joinFolder(folder, `${base}${suffix}.md`);
 		if (!(await store.exists(path))) return path;
 	}
 	for (let n = 2; ; n++) {
-		const path = joinFolder(folder, `${baseName} (${n}).md`);
+		const path = joinFolder(folder, `${base} (${n}).md`);
 		if (!(await store.exists(path))) return path;
 	}
+}
+
+/**
+ * The name the ladder starts from for a sent document (send spec §6.2). A bare name another
+ * document's note holds -- an earlier copy's -- takes the send date, which says "another copy". One
+ * this same document's note holds under its other tag does not: a date there would say the same
+ * thing falsely, so the ladder's ` (<tag>)` tells the two apart.
+ */
+async function sentBaseName(store: NoteStore, folder: string, baseName: string, sent: SentNote): Promise<string> {
+	const bare = joinFolder(folder, `${baseName}.md`);
+	if (!(await store.exists(bare)) || sent.ownNotes.includes(bare)) return baseName;
+	return `${baseName} ${sent.sentOn}`;
 }
 
 /** Vault paths never start with a slash, so the root ("" after trimming) joins bare. */
@@ -548,8 +622,8 @@ export async function writeNote(store: NoteStore, folder: string, fields: NoteFi
 	if (existingPath != null) return writeNoteAt(store, existingPath, fields);
 
 	const trimmedFolder = folder.replace(/\/+$/, "");
-	const baseName = deriveBaseName(fields.source, fields.pageIndex);
-	const path = await resolveFreePath(store, trimmedFolder, baseName, fields.tag, fields.docId);
+	const baseName = deriveBaseName(fields.source, fields.pageIndex, fields.sent !== undefined);
+	const path = await resolveFreePath(store, trimmedFolder, baseName, fields.tag, fields.docId, fields.sent);
 	return writeNoteAt(store, path, fields);
 }
 
@@ -563,10 +637,10 @@ export async function writeNote(store: NoteStore, folder: string, fields: NoteFi
  */
 export async function moveNote(store: NoteStore, fromPath: string, toFolder: string, fields: NoteFields): Promise<string> {
 	const trimmedFolder = toFolder.replace(/\/+$/, "");
-	const baseName = deriveBaseName(fields.source, fields.pageIndex);
+	const baseName = deriveBaseName(fields.source, fields.pageIndex, fields.sent !== undefined);
 	const candidatePath = joinFolder(trimmedFolder, `${baseName}.md`);
 
-	const toPath = candidatePath === fromPath ? candidatePath : await resolveFreePath(store, trimmedFolder, baseName, fields.tag, fields.docId);
+	const toPath = candidatePath === fromPath ? candidatePath : await resolveFreePath(store, trimmedFolder, baseName, fields.tag, fields.docId, fields.sent);
 
 	if (fromPath !== toPath) {
 		if (trimmedFolder !== "") await store.ensureFolder(trimmedFolder);

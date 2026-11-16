@@ -114,6 +114,8 @@ describe("migrateSettings", () => {
 			sshHashes: { "doc.content|12|1000": "a".repeat(64) },
 			zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: true, localKeys: { "1PUT74VpHXuE": "0".repeat(32) }, folder: "Papers", sendOverSsh: true, sendTag: "lesen", groups: [], writeText: false, addRender: true },
 			zoteroLinks: { "576dc0a6-323b-468e-bd69-a2ae6c25dbb9": { attachmentKey: "5IDIN5M2", library: "user", annotations: {} } },
+			vaultSends: { "1f7c2a90-5b4e-4d1a-9c3e-7a2b8e6d0f11": { origin: "Specs/Login-Spec.md", kind: "note", sentAt: "2026-11-13T10:00:00.000Z", name: "Login-Spec", folderId: "f-1", seenAt: "2026-11-13T11:00:00.000Z" } },
+			vaultSend: { folder: "Inbox", tablet: "paperPro", textSize: "large", toolbarRight: true, tabletSeen: "rm12", tabletSeenAt: "2026-11-12T09:00:00.000Z" },
 			tagFolderMap: { "#work": "Work" },
 			syncIndex: { version: 4, rows: { "doc/1": { note: "Work/One.md" } } },
 			ocrBackend: "anthropic",
@@ -191,6 +193,41 @@ describe("migrateSettings", () => {
 			expect(migrateSettings(marks, ENV)).toMatchObject(marks);
 			const junk = migrateSettings({ readwiseAccount: 7, readwiseAccountBefore: "", readwiseAccountClash: "yes", readwiseRecording: 1 }, ENV);
 			expect(["readwiseAccount", "readwiseAccountBefore", "readwiseAccountClash", "readwiseRecording"].filter((key) => key in junk)).toEqual([]);
+		});
+	});
+
+	describe("the record of vault sends (send spec §5)", () => {
+		it("gives the data.json the last release wrote an empty record", () => {
+			const legacy: unknown = JSON.parse(readFileSync(join(process.cwd(), "test-fixtures", "legacy-state", "vault", ".obsidian", "plugins", "remarkable-tagged-sync", "data.json"), "utf8"));
+
+			expect(migrateSettings(legacy, ENV).vaultSends).toEqual({});
+		});
+
+		// An entry this build cannot read was written by another install of this vault (§5).
+		it("carries the record whole, a malformed entry included", () => {
+			const vaultSends = { "doc-1": { origin: "Specs/Login-Spec.md", kind: "note", sentAt: "2026-11-13T10:00:00.000Z" }, "doc-2": "written by a newer build" };
+
+			expect(migrateSettings({ vaultSends }, ENV).vaultSends).toEqual(vaultSends);
+		});
+
+		// A rename spreads the map; a string would come back as one entry per character.
+		it("reads a record that is no map as empty", () => {
+			for (const vaultSends of ["junk", [{ origin: "Specs/Login-Spec.md" }], null]) expect(migrateSettings({ vaultSends }, ENV).vaultSends).toEqual({});
+		});
+	});
+
+	describe("the Send from the vault group (send spec §7)", () => {
+		it("gives the data.json the last release wrote folder Obsidian, no tablet chosen, Normal and the toolbar on the left", () => {
+			const legacy: unknown = JSON.parse(readFileSync(join(process.cwd(), "test-fixtures", "legacy-state", "vault", ".obsidian", "plugins", "remarkable-tagged-sync", "data.json"), "utf8"));
+
+			expect(migrateSettings(legacy, ENV).vaultSend).toEqual({ folder: "Obsidian", tablet: "auto", textSize: "normal", toolbarRight: false, tabletSeen: null, tabletSeenAt: null });
+		});
+
+		it("fills a half-written group from the defaults and never takes the Zotero folder for its own", () => {
+			const data = migrateSettings({ zotero: { folder: "Inbox" }, vaultSend: { textSize: "large" } }, ENV);
+
+			expect(data.vaultSend).toEqual({ ...DEFAULT_DATA.vaultSend, textSize: "large" });
+			expect(data.zotero.folder).toBe("Inbox");
 		});
 	});
 
@@ -280,8 +317,10 @@ describe("migrateSettings", () => {
 		const data = migrateSettings(null, ENV);
 		data.autoSync.enabled = true;
 		data.licence.key = "leaked";
+		data.vaultSend.folder = "leaked";
 
 		expect(DEFAULT_AUTO_SYNC.enabled).toBe(false);
 		expect(NO_LICENCE.key).toBeNull();
+		expect(DEFAULT_DATA.vaultSend.folder).toBe("Obsidian");
 	});
 });

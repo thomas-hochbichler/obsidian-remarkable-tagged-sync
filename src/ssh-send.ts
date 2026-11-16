@@ -166,15 +166,16 @@ async function writeDocument(device: DeviceSendTarget, docId: string, document: 
 }
 
 /**
- * Adds one PDF to the tablet and restarts its reading app. Answers the id the document now has.
+ * Adds one PDF to the tablet and restarts its reading app. Answers the id the document now has, and
+ * the folder's.
  *
  * The restart is last and is not optional: without it the files sit on the disk and *My files* never
  * shows them, which the measurement watched happen twice before concluding it.
  */
-export async function sendOverSsh(device: DeviceSendTarget, document: SendDocument, newId: () => string = () => crypto.randomUUID()): Promise<{ docId: string }> {
+export async function sendOverSsh(device: DeviceSendTarget, document: SendDocument, newId: () => string = () => crypto.randomUUID()): Promise<{ docId: string; folderId: string }> {
 	const parent = await findOrCreateFolder(device, document.folder, newId);
 	const docId = newId();
 	await writeDocument(device, docId, document, parent, newId);
 	await device.exec(RESTART_COMMAND);
-	return { docId };
+	return { docId, folderId: parent };
 }

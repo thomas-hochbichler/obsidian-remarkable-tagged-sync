@@ -391,4 +391,13 @@ describe("sending a PDF over SSH", () => {
 		await expect(transport().putPdf(document)).rejects.toThrow("disk full");
 		expect(close).toHaveBeenCalled();
 	});
+
+	// Send spec §3, 05 #12: clearing over SSH would mean rewriting a document's `.metadata` on a live
+	// device, which nobody could check on a tablet. So the members are not there at all, and a vault
+	// send over SSH only adds.
+	it("has no look at earlier copies and no trash", () => {
+		const ssh = transport();
+		expect("earlierCopies" in ssh).toBe(false);
+		expect("moveToTrash" in ssh).toBe(false);
+	});
 });

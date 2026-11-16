@@ -946,6 +946,28 @@ export class ProgressBarComponent {
 	}
 }
 
+/** Loaded or not, nothing more: what a render holds open while Obsidian draws a note. */
+export class Component {
+	loaded = false;
+	load(): void {
+		this.loaded = true;
+	}
+	unload(): void {
+		this.loaded = false;
+	}
+}
+
+/**
+ * Not modelled: what Obsidian draws for a note is the thing a fake would invent. Code that renders
+ * takes its renderer handed in (src/note-document.ts `RenderHost`), and its tests use markup the
+ * real renderer emitted (test-fixtures/rendered-notes/).
+ */
+export const MarkdownRenderer = {
+	render(): Promise<void> {
+		return Promise.reject(new Error("tests/stubs: MarkdownRenderer.render is not modelled. Hand the code a renderer instead."));
+	},
+};
+
 export class MarkdownRenderChild {
 	private readonly cleanups: (() => void)[] = [];
 	constructor(readonly containerEl: FakeEl) {}

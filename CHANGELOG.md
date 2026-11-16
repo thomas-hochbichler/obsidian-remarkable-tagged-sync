@@ -12,6 +12,25 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Send from the vault.** *Send this file to reMarkable* — in the command palette and in a file's
+  menu — puts the open note or PDF on your tablet. A PDF goes up as it is. A note is printed the
+  way Obsidian shows it, on a page the size of your tablet's screen, with a margin that clears the
+  toolbar. Tag the document or any page of it, and the next sync brings your marks back as **one
+  note**, "… — marked up", that links to the note it came from. Free; over SSH it is part of Pro.
+  See [Send from the vault](README.md#send-from-the-vault).
+- **Settings for sent notes:** the tablet folder, *Tablet*, *Text size* and *Toolbar on the right*.
+
+### Changed
+
+- **Send may clear its own earlier copy.** Send a vault file a second time and the copy you never
+  touched moves to the tablet's trash; one you wrote on, tagged or moved stays unless you say
+  otherwise. Nothing
+  you put on the tablet yourself is ever touched, and a Zotero send still only adds.
+- **A page tag on a document you sent from the vault brings back the whole document** as one note.
+  Everything else keeps the rule "a tagged page is its own note".
+
 ### Fixed
 
 - **A digest quote carries its whole sentence.** A sentence longer than the lines next to your mark

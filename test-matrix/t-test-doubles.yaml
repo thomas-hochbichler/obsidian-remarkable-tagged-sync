@@ -310,6 +310,13 @@
       file: tests/stubs/fake-obsidian.test.ts
       test: "the plugin host > holds an onLayoutReady callback until the workspace is ready, then runs it"
 
+    - id: T9.3
+      scenario: Code that renders a note reaches Component and MarkdownRenderer
+      expect: A component keeps its loaded state; the renderer refuses -- what Obsidian draws is taken from captured markup, never invented by the fake
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "rendering a note > keeps a component's loaded state and refuses to invent what the renderer draws"
+
 - feature: T10
   name: The settings controls the plugin reaches past
   code: tests/stubs/fake-obsidian.ts

@@ -190,6 +190,41 @@
       file: src/settings-store.test.ts
       test: "migrateSettings > the Readwise push (Readwise spec §3) > keeps the account and recording marks only where they read as such"
 
+    - id: A8.43
+      scenario: The data.json the last shipped release wrote (`test-fixtures/legacy-state`) is loaded by a build that sends from the vault
+      expect: An empty record of vault sends
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the record of vault sends (send spec §5) > gives the data.json the last release wrote an empty record"
+
+    - id: A8.44
+      scenario: vaultSends holds an entry this build cannot read, written by another install of the vault
+      expect: Carried whole, so the next save writes it back -- `vault-sends.ts` reads entries one at a time
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the record of vault sends (send spec §5) > carries the record whole, a malformed entry included"
+
+    - id: A8.45
+      scenario: vaultSends is a string, an array or null
+      expect: An empty record -- a rename spreads the map, and a string would become one entry per character
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the record of vault sends (send spec §5) > reads a record that is no map as empty"
+
+    - id: A8.46
+      scenario: The data.json the last shipped release wrote is loaded by a build with the Send from the vault group
+      expect: Folder Obsidian, no tablet chosen ("auto"), Normal, toolbar on the left, no screen seen
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Send from the vault group (send spec §7) > gives the data.json the last release wrote folder Obsidian, no tablet chosen, Normal and the toolbar on the left"
+
+    - id: A8.47
+      scenario: A vaultSend block holding only a text size, beside a Zotero folder named Inbox
+      expect: The rest from the defaults; the vault send's folder is Obsidian, not taken from Zotero's
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Send from the vault group (send spec §7) > fills a half-written group from the defaults and never takes the Zotero folder for its own"
+
 - feature: E12
   name: Unknown or retired backend id migrates
   code: src/settings-store.ts

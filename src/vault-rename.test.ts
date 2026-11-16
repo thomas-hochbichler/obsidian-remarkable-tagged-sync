@@ -3,6 +3,7 @@ import { FakeClock } from "../tests/stubs/fake-clock";
 import { FakeApp, FakeVault } from "../tests/stubs/fake-obsidian";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { EMPTY_SYNC_INDEX } from "./sync-engine";
+import { sendFor, withSend, type StoredVaultSends, type VaultSend } from "./vault-sends";
 
 // Gap G16 -- keeping `data.json` pointed at notes the user moved.
 //
@@ -24,7 +25,7 @@ vi.mock("rmapi-js", () => ({
 }));
 
 /** The engine, replaced: a rename during a run is one of the cases, and a run has to be holdable. */
-const engine = vi.hoisted(() => ({ hold: null as Promise<void> | null }));
+const engine = vi.hoisted(() => ({ hold: null as Promise<void> | null, listed: null as string[] | null }));
 
 vi.mock("./sync-engine", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./sync-engine")>();
@@ -34,6 +35,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 			if (engine.hold) await engine.hold;
 			return {
 				index,
+				documentIds: engine.listed,
 				stopped: false,
 				notesWritten: 0,
 				unavailableOcrUnits: 0,
@@ -50,7 +52,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 
 interface Plugin {
 	app: FakeApp;
-	data: { syncIndex: { rows: Record<string, { notePath: string; status: string }> } };
+	data: { syncIndex: { rows: Record<string, { notePath: string; status: string }> }; vaultSends: StoredVaultSends };
 	saves: unknown[];
 	syncNow(): Promise<void>;
 }
@@ -59,7 +61,7 @@ function row(notePath: string, status = "active") {
 	return { syncKey: notePath, docId: "doc-1", pageId: null, notePath, status };
 }
 
-async function loadWith(paths: string[], extra: Record<string, ReturnType<typeof row>> = {}): Promise<Plugin> {
+async function loadWith(paths: string[], extra: Record<string, ReturnType<typeof row>> = {}, vaultSends: StoredVaultSends = {}): Promise<Plugin> {
 	const vault = new FakeVault();
 	const rows: Record<string, ReturnType<typeof row>> = { ...extra };
 	for (const path of paths) {
@@ -72,7 +74,7 @@ async function loadWith(paths: string[], extra: Record<string, ReturnType<typeof
 		new FakeApp(vault),
 		{ id: "tagged-sync", name: "Tagged Sync", version: "0.0.0" },
 	);
-	plugin.saved = { deviceToken: "device-token", ocrBackend: "off", syncIndex: { ...EMPTY_SYNC_INDEX, rows } };
+	plugin.saved = { deviceToken: "device-token", ocrBackend: "off", syncIndex: { ...EMPTY_SYNC_INDEX, rows }, vaultSends };
 	// A clock nobody moves: the launch sync never comes due, so nothing runs behind these renames.
 	(plugin as unknown as { scheduler: FakeClock }).scheduler = new FakeClock();
 	await (plugin as unknown as { onload(): Promise<void> }).onload();
@@ -94,6 +96,7 @@ const notePaths = (plugin: Plugin) => Object.values(plugin.data.syncIndex.rows).
 
 beforeEach(() => {
 	engine.hold = null;
+	engine.listed = null;
 });
 
 describe("when the user moves a synced note", () => {
@@ -180,9 +183,10 @@ describe("when the user moves a folder of synced notes", () => {
 });
 
 describe("what a rename does not do", () => {
-	it("ignores renames while a sync is running", async () => {
+	it("leaves the rows alone while a sync is running", async () => {
 		// A sync moves notes itself and replaces the whole index when it finishes. Reacting mid-run
-		// would persist a state the sync is about to overwrite anyway.
+		// would persist a state the sync is about to overwrite anyway. (The record of vault sends is
+		// not the index and does follow -- see the last block.)
 		const plugin = await loadWith(["Notes/Meeting.md"]);
 		let open!: () => void;
 		engine.hold = new Promise<void>((resolve) => (open = resolve));
@@ -232,5 +236,73 @@ describe("what a rename does not do", () => {
 		await move(plugin, "Notes/A.md", "Notes/B.md");
 
 		expect(notePaths(plugin).sort()).toEqual(["Notes/B.md", "Notes/B.md"]);
+	});
+});
+
+// Send spec §5: the record of a send names its origin by path, and the path follows the file.
+describe("when the user moves a file the vault sent", () => {
+	const SENT: VaultSend = { origin: "Specs/Login-Spec.md", kind: "note", sentAt: "2026-11-13T10:00:00.000Z", name: "Login-Spec", folderId: "folder-1" };
+
+	const origins = (plugin: Plugin) => Object.keys(plugin.data.vaultSends).map((docId) => sendFor(plugin.data.vaultSends, docId)?.origin);
+	const lastSave = (plugin: Plugin) => plugin.saves.at(-1) as Plugin["data"];
+
+	async function loadSent(): Promise<Plugin> {
+		const plugin = await loadWith([], {}, { "sent-1": SENT });
+		plugin.app.vault.seed(SENT.origin, "# Login");
+		return plugin;
+	}
+
+	it("follows the origin, and writes data.json once", async () => {
+		const plugin = await loadSent();
+
+		await move(plugin, "Specs/Login-Spec.md", "Specs/Auth-Spec.md");
+
+		expect(origins(plugin)).toEqual(["Specs/Auth-Spec.md"]);
+		expect(plugin.saves).toHaveLength(1);
+	});
+
+	it("follows a folder move with one write, the origin and a synced note's row together", async () => {
+		const plugin = await loadWith(["Specs/Login-Spec — marked up.md"], {}, { "sent-1": SENT });
+		plugin.app.vault.seed(SENT.origin, "# Login");
+		await plugin.app.vault.createFolder("Specs");
+
+		await move(plugin, "Specs", "Archive");
+
+		expect([origins(plugin), notePaths(plugin)]).toEqual([["Archive/Login-Spec.md"], ["Archive/Login-Spec — marked up.md"]]);
+		expect(plugin.saves).toHaveLength(1);
+	});
+
+	it("follows the origin while a sync is running, and it is still followed after the sync has saved (F3)", async () => {
+		const plugin = await loadSent();
+		engine.listed = ["sent-1"];
+		let open!: () => void;
+		engine.hold = new Promise<void>((resolve) => (open = resolve));
+
+		const run = plugin.syncNow();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await move(plugin, "Specs/Login-Spec.md", "Specs/Auth-Spec.md");
+		open();
+		await run;
+
+		const saved = lastSave(plugin);
+		expect(sendFor(saved.vaultSends, "sent-1")?.origin).toBe("Specs/Auth-Spec.md");
+		// The run's own listing was applied to the live map, not to a copy it took at its start.
+		expect(sendFor(saved.vaultSends, "sent-1")?.seenAt).toBeDefined();
+	});
+
+	it("keeps a send recorded while a sync is running (F3)", async () => {
+		const plugin = await loadSent();
+		engine.listed = ["sent-1"];
+		let open!: () => void;
+		engine.hold = new Promise<void>((resolve) => (open = resolve));
+
+		const run = plugin.syncNow();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		// What the send command (ticket 16) does: write into the live record and save.
+		plugin.data.vaultSends = withSend(plugin.data.vaultSends, "sent-2", { ...SENT, sentAt: "2026-11-13T10:05:00.000Z" });
+		open();
+		await run;
+
+		expect(Object.keys(lastSave(plugin).vaultSends).sort()).toEqual(["sent-1", "sent-2"]);
 	});
 });
