@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-16
+
 ### Added
 
 - **Send from the vault.** *Send this file to reMarkable* — in the command palette and in a file's
