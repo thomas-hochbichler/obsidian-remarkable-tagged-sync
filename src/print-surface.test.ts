@@ -353,7 +353,10 @@ describe("obsidianHost", () => {
 			},
 			head: { querySelectorAll: () => [style(".a {}"), style(null)] },
 		});
-		vi.stubGlobal("activeWindow", { setTimeout: () => 7, clearTimeout: vi.fn() });
+		const clearTimeout = vi.fn();
+		vi.stubGlobal("window", { setTimeout: () => 7, clearTimeout });
+		// A pop-out's timers never fire once it closes (Obsidian 1.15.1), so the deadlines must not use them.
+		vi.stubGlobal("activeWindow", { setTimeout: () => 99, clearTimeout: vi.fn() });
 
 		const host = obsidianHost();
 		const webview = host.createWebview({ src: PRINT_PAGE_URL, style: "width: 486px" });
@@ -364,6 +367,7 @@ describe("obsidianHost", () => {
 		expect(host.windowStyles()).toEqual({ bodyClass: "theme-dark", bodyStyle: "", headStyles: [".a {}", ""] });
 		expect(host.setTimeout(() => {}, 5)).toBe(7);
 		host.clearTimeout(7);
+		expect(clearTimeout).toHaveBeenCalledWith(7);
 		expect(host.electronVersion).toBe(process.versions.electron ?? "");
 	});
 });

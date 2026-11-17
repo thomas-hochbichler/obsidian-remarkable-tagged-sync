@@ -579,10 +579,10 @@
 
     - id: V3.33
       scenario: Inside Obsidian, the waits
-      expect: On the active window's timers, the window the note is rendered in
+      expect: On the main window's timers, not a pop-out's, which never fire once it closes
       layer: unit
       file: src/note-document.test.ts
-      test: "obsidianRenderHost > sleeps on the active window's timers and tells the time"
+      test: "obsidianRenderHost > sleeps on the main window's timers, not a pop-out's, and tells the time"
 
 
 - feature: V4

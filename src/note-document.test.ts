@@ -642,7 +642,9 @@ describe("obsidianRenderHost", () => {
 	function stubWindow() {
 		const created: { cls?: string; attr?: Record<string, string> }[] = [];
 		vi.stubGlobal("activeDocument", { body: { createDiv: (options: { cls: string; attr: Record<string, string> }) => (created.push(options), el("div")) } });
-		vi.stubGlobal("activeWindow", { setTimeout: (callback: () => void, ms: number) => (obsidian.calls.push(`timer ${ms}`), setTimeout(callback, 0)) });
+		vi.stubGlobal("window", { setTimeout: (callback: () => void, ms: number) => (obsidian.calls.push(`timer ${ms}`), setTimeout(callback, 0)) });
+		// A pop-out's timers never fire once it closes (Obsidian 1.15.1), so the render must not use them.
+		vi.stubGlobal("activeWindow", { setTimeout: () => obsidian.calls.push("pop-out timer") });
 		return created;
 	}
 
@@ -675,7 +677,7 @@ describe("obsidianRenderHost", () => {
 		expect(obsidian.calls).toEqual(["load", "render a.md Text with component", "unload"]);
 	});
 
-	it("sleeps on the active window's timers and tells the time", async () => {
+	it("sleeps on the main window's timers, not a pop-out's, and tells the time", async () => {
 		stubWindow();
 		const host = obsidianRenderHost({} as never);
 
