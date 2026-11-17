@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-11-17
+
 ### Fixed
 
 - **Sending a note no longer hangs when you close a pop-out window.** Started from a pop-out and
