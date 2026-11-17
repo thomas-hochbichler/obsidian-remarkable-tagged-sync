@@ -12,6 +12,13 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sending a note no longer hangs when you close a pop-out window.** Started from a pop-out and
+  the window closed while the note was printed, *Send this file to reMarkable* waited for ever,
+  with no notice. Its waits now run on Obsidian's main window, so the send finishes or gives up
+  after its usual time limits.
+
 ## [1.12.0] - 2026-11-16
 
 ### Added

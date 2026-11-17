@@ -256,10 +256,13 @@ export async function printNote(
 	return print({ html, title: file.basename, page, layout: layoutSource() });
 }
 
-/** The render in Obsidian: its active document, its public renderer, its window's timers. */
+/**
+ * The render in Obsidian: its active document, its public renderer, the main window's timers. Not
+ * the active window's: a pop-out's timers never fire once it closes (Obsidian 1.15.1), and the send
+ * would wait for ever.
+ */
 export function obsidianRenderHost(app: App): RenderHost {
 	const doc = activeDocument;
-	const win = activeWindow;
 	return {
 		createView(widthPx) {
 			return doc.body.createDiv({
@@ -278,7 +281,7 @@ export function obsidianRenderHost(app: App): RenderHost {
 			}
 			return () => component.unload();
 		},
-		sleep: (ms) => new Promise((resolve) => win.setTimeout(resolve, ms)),
+		sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
 		now: () => Date.now(),
 	};
 }

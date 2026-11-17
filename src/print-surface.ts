@@ -248,10 +248,13 @@ function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** The surroundings in Obsidian: its active window, its document, and the Electron it runs on. */
+/**
+ * The surroundings in Obsidian: its active document, the Electron it runs on, and the main window's
+ * timers. Not the active window's: a pop-out's timers never fire once it closes (Obsidian 1.15.1),
+ * and these are the deadlines that end a print which hangs.
+ */
 export function obsidianHost(): PrintHost {
 	const doc = activeDocument;
-	const win = activeWindow;
 	return {
 		createWebview(attributes) {
 			// Attributes before attaching: a webview starts loading `src` as soon as it is in the document.
@@ -267,7 +270,7 @@ export function obsidianHost(): PrintHost {
 			headStyles: Array.from(doc.head.querySelectorAll("style"), (style) => style.textContent ?? ""),
 		}),
 		electronVersion: process.versions.electron ?? "",
-		setTimeout: (callback, ms) => win.setTimeout(callback, ms),
-		clearTimeout: (id) => win.clearTimeout(id),
+		setTimeout: (callback, ms) => window.setTimeout(callback, ms),
+		clearTimeout: (id) => window.clearTimeout(id),
 	};
 }

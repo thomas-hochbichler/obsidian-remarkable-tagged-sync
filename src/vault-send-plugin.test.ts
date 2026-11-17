@@ -172,7 +172,7 @@ describe("what the plugin hands a vault send", () => {
 		const note = h.app.vault.seed("Specs/Login-Spec.md", "# Login\n\nThe spec.");
 		// Where the note is rendered off-screen; the renderer itself is the stub's, which refuses.
 		vi.stubGlobal("activeDocument", { body: { createDiv: () => ({ remove: () => undefined }) } });
-		vi.stubGlobal("activeWindow", { setTimeout });
+		vi.stubGlobal("window", { setTimeout });
 
 		await sendVaultFile(h.host, note as never);
 
